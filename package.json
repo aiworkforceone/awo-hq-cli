@@ -1,0 +1,27 @@
+{
+  "name": "@aiworkforceoneofficial/hq",
+  "version": "0.1.0",
+  "description": "Connect your computer to your AI Workforce One HQ team machines: SSH, attach and port forwarding.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aiworkforceone/awo-hq-cli.git"
+  },
+  "homepage": "https://github.com/aiworkforceone/awo-hq-cli#readme",
+  "type": "module",
+  "bin": {
+    "hq": "dist/hq.cjs"
+  },
+  "files": [
+    "dist/hq.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs"
+  }
+}
