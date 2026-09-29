@@ -1,0 +1,44 @@
+name: publish
+# Lives in the PUBLIC mirror aiworkforceone/awo-hq-cli (copied there by kpa-app's hq-cli-publish.yml as
+# .github/workflows/publish.yml). Publishes the bundle committed here, with npm provenance tying the
+# package to this public commit. OIDC trusted publishing: no stored npm token.
+#
+# WHAT PROVES THE BUNDLE CAME FROM kpa-app: only the push path. The release commit and its tag are
+# pushed by kpa-app's workflow with a deploy key that exists nowhere else, and `main` plus `v*` tags
+# must be protected so nothing else can push them (a setup prerequisite, DEVOPS.md). SHA256SUMS
+# travels in the SAME commit, so its check below only proves the tree is internally consistent, not
+# where it came from. A signed bundle (keyless cosign/minisign or an artifact attestation verified
+# here) is the follow-up that would make origin checkable (review suggestion, open item).
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: hq-cli-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: the tree is internally consistent (bundle matches the committed checksum)
+        run: sha256sum -c SHA256SUMS
+      - name: tag matches package.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "${TAG#v}" = "$(node -p 'require("./package.json").version')"
+      - name: publish
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in *-rc.*) dist=next ;; *) dist=latest ;; esac
+          npm publish --provenance --access public --tag "$dist" --ignore-scripts
