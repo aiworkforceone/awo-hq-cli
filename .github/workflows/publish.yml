@@ -29,6 +29,12 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
+      - name: npm new enough for trusted publishing (OIDC needs npm >= 11.5.1; Node 22 ships npm 10)
+        run: |
+          set -euo pipefail
+          npm install -g "npm@>=11.5.1 <12" --ignore-scripts
+          v="$(npm --version)"; echo "npm $v"
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(Number);process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$v"
       - name: the tree is internally consistent (bundle matches the committed checksum)
         run: sha256sum -c SHA256SUMS
       - name: tag matches package.json
