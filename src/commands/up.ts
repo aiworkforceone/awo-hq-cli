@@ -1,13 +1,16 @@
 /**
- * `hq up <team>` wakes a team (a human signal, decision 23); `hq open <editor|--with "cmd"> <team>`
- * wakes it and then starts the editor on the team folder over SSH. The CLI never names an editor it
- * does not launch itself: `--with` takes any command with `{host}` and `{dir}` placeholders.
+ * `hq up <team>` wakes a team (a human signal, decision 23) through the wake route (hq-vscode D13).
+ * SSH was removed on 2026-10-01, so the route is the only way: there is no SSH-door fallback.
  */
-import type { RemoteOrg } from '@kpa/shared/remote.types';
-import { spawn } from 'node:child_process';
-import { closeConnection, ConnectRefusedError, openConnection } from '../connect.js';
+import type { RemoteOrg, RemoteWakeResponse, RemoteWorkspace } from '@kpa/shared/remote.types';
+import {
+  ConnectRefusedError,
+  refusalMessage,
+  WAKE_POLL_MS,
+  WAKE_TIMEOUT_MS,
+  wakeTimeoutMessage,
+} from '../connect.js';
 import { clientFor, type Ctx } from '../context.js';
-import { pinHostKey } from '../ssh-config-file.js';
 import { readState, writeState } from '../state.js';
 import { resolveTeam, type Team } from '../teams.js';
 
@@ -23,16 +26,35 @@ export async function loadTeam(
   return { team: resolveTeam(orgs, ref, org), client };
 }
 
+/**
+ * `hq up` (hq-vscode D13): wake through `POST …/workspaces/:ws/wake`, which is open to viewers, then
+ * wait until the team reads `running`. Every refusal (a 404 included) is the plain sentence.
+ */
 async function wake(ctx: Ctx, team: Team, client: ReturnType<typeof clientFor>): Promise<void> {
-  const ready = await openConnection(
-    client,
-    team,
-    { scope: 'ssh', client: 'hq', intent: 'open', wake: true },
-    { now: ctx.now, sleep: ctx.sleep, say: ctx.err },
-  );
-  if (ready.hostKey) await pinHostKey(team.alias, ready.hostKey, ctx.env);
-  // `hq up` only needed the machine awake; the row is not a connection.
-  await closeConnection(client, team, ready.id);
+  const base = `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}`;
+  let answer: { status: number; body: RemoteWakeResponse };
+  try {
+    answer = await client.request<RemoteWakeResponse>('POST', `${base}/wake`, {
+      org: team.org.slug,
+      signed: true,
+    });
+  } catch (err) {
+    throw new ConnectRefusedError(refusalMessage(team, err));
+  }
+  if (answer.body.state === 'running') return;
+  ctx.err(`hq: waking team "${team.workspace.name}" (about 15 s)...`);
+  const deadline = ctx.now() + WAKE_TIMEOUT_MS;
+  while (ctx.now() < deadline) {
+    await ctx.sleep(WAKE_POLL_MS);
+    let ws: RemoteWorkspace;
+    try {
+      ws = (await client.request<RemoteWorkspace>('GET', base, { org: team.org.slug })).body;
+    } catch (err) {
+      throw new ConnectRefusedError(refusalMessage(team, err));
+    }
+    if (ws.state === 'running') return;
+  }
+  throw new ConnectRefusedError(wakeTimeoutMessage(team));
 }
 
 export async function up(ctx: Ctx, opts: { team: string; org?: string }): Promise<number> {
@@ -45,65 +67,4 @@ export async function up(ctx: Ctx, opts: { team: string; org?: string }): Promis
     ctx.err(err instanceof ConnectRefusedError ? err.message : (err as Error).message);
     return 1;
   }
-}
-
-export function teamDir(team: Team): string {
-  return `/data/workspaces/${team.workspace.id}`;
-}
-
-/** The argv for a known editor, or for a `--with` template. Never goes through a shell. */
-export function editorArgv(
-  editor: string | undefined,
-  withCmd: string | undefined,
-  team: Team,
-): string[] | null {
-  const host = team.alias;
-  const dir = teamDir(team);
-  if (withCmd) {
-    const parts = withCmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-    return parts.map((p) =>
-      p
-        .replace(/^["']|["']$/g, '')
-        .replace(/\{host\}/g, host)
-        .replace(/\{dir\}/g, dir),
-    );
-  }
-  if (editor === 'cursor') return ['cursor', '--remote', `ssh-remote+${host}`, dir];
-  if (editor === 'zed') return ['zed', `ssh://${host}${dir}`];
-  return null;
-}
-
-export async function open(
-  ctx: Ctx,
-  opts: { editor?: string; with?: string; team: string; org?: string },
-  run: (argv: string[]) => Promise<number> = runDetached,
-): Promise<number> {
-  try {
-    const { team, client } = await loadTeam(ctx, opts.team, opts.org);
-    const argv = editorArgv(opts.editor, opts.with, team);
-    if (!argv || argv.length === 0) {
-      ctx.err('hq: name an editor (cursor or zed), or pass --with "<command {host} {dir}>".');
-      return 2;
-    }
-    await wake(ctx, team, client);
-    ctx.out(`Opening ${team.workspace.name} (${team.alias})...`);
-    return await run(argv);
-  } catch (err) {
-    ctx.err(err instanceof ConnectRefusedError ? err.message : (err as Error).message);
-    return 1;
-  }
-}
-
-function runDetached(argv: string[]): Promise<number> {
-  return new Promise((resolve) => {
-    const child = spawn(argv[0]!, argv.slice(1), { stdio: 'ignore', detached: true });
-    child.once('error', () => {
-      process.stderr.write(`hq: could not start "${argv[0]}". Is it installed and on your PATH?\n`);
-      resolve(1);
-    });
-    child.once('spawn', () => {
-      child.unref();
-      resolve(0);
-    });
-  });
 }

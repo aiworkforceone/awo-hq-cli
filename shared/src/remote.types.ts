@@ -44,15 +44,47 @@ export const HQ_HEADER_NONCE = 'x-hq-nonce';
 export const HQ_HEADER_DEVICE_SIG = 'x-hq-device-sig';
 export const HQ_HEADER_CONNECT_CODE = 'x-hq-connect-code';
 export const HQ_HEADER_CLI_VERSION = 'x-hq-cli-version';
+/**
+ * hq-vscode (decision 22): `<kind>/<semver>` on every request and upgrade, e.g. `vscode/0.1.0` or
+ * `hq/0.2.0`. The server holds each kind to its own floor; ABSENT means the `hq` CLI and today's
+ * `X-HQ-CLI-Version` rule.
+ */
+export const HQ_HEADER_CLIENT = 'x-hq-client';
+/**
+ * hq-vscode decision 24: a client that sends `X-HQ-Client` asks for the next signature's nonce with
+ * this header; requests without `X-HQ-Client` (CLIs before this change) keep getting one always.
+ */
+export const HQ_HEADER_WANT_NONCE = 'x-hq-want-nonce';
+/** The `X-HQ-Client` kinds the server knows. Any other kind is below every floor that exists. */
+export type HqClientKind = 'hq' | 'vscode';
+export const HQ_CLIENT_KINDS: readonly HqClientKind[] = ['hq', 'vscode'];
 
 /**
- * The bytes a device signature covers, as one string: `nonce\nMETHOD\n/path\nsha256hex(body)`.
+ * Parse `X-HQ-Client`. `null` when the header is absent; kind `unknown` for anything that is not
+ * `<known kind>/<version>`. The version is returned as sent (the server's own parser decides whether
+ * it is a version).
+ */
+export function parseHqClientHeader(
+  value: string | undefined,
+): { kind: HqClientKind; version: string } | { kind: 'unknown'; version: null } | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const m = /^([a-z][a-z0-9-]{0,31})\/(\S{1,64})$/.exec(value.trim());
+  if (!m) return { kind: 'unknown', version: null };
+  const kind = m[1] as string;
+  if (!(HQ_CLIENT_KINDS as readonly string[]).includes(kind))
+    return { kind: 'unknown', version: null };
+  return { kind: kind as HqClientKind, version: m[2] as string };
+}
+
+/**
+ * The bytes a device signature covers, as one string: `nonce\nMETHOD\n/path?query\nsha256hex(body)`.
  *
  * Newline-separated rather than concatenated, so no field can bleed into the next (`nonce || method`
  * with a method of `POST` and a path starting with `T` is otherwise ambiguous). The PATH is the
- * request path WITHOUT the query string; the body hash is the lowercase hex SHA-256 of the exact
- * request body bytes (empty body → the hash of the empty string). Both ends build the payload with
- * THIS function, so the order cannot drift.
+ * request target INCLUDING its query string, exactly as sent (`signedRequestTarget`; security
+ * review S5: a query is covered, so none can be added or changed); the body hash is the lowercase
+ * hex SHA-256 of the exact request body bytes (empty body → the hash of the empty string). Both ends
+ * build the payload with THIS function, so the order cannot drift.
  */
 export function deviceSignaturePayload(
   nonce: string,
@@ -63,6 +95,16 @@ export function deviceSignaturePayload(
   return `${nonce}\n${method.toUpperCase()}\n${path}\n${bodySha256Hex.toLowerCase()}`;
 }
 
+/**
+ * The request target a device signature covers: the path WITH its query string, exactly as sent
+ * (security review S5). Before it the server stripped the query; every signed call a released
+ * client makes carries none, and for those the target is byte-identical, so old clients still
+ * verify. A client signs the same string it requests (`HqClient.request(method, path)`).
+ */
+export function signedRequestTarget(url: string | undefined): string {
+  return url ?? '';
+}
+
 /** SHA-256 of the empty string, lowercase hex — the body hash of a GET or an upgrade. */
 export const EMPTY_BODY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
@@ -70,8 +112,28 @@ export const EMPTY_BODY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b93
 // Device authorization (hq login)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Which HQ client asked for a device grant: the `hq` CLI or the VS Code extension (hq-vscode
+ * decision 2: its own grant and key, never the CLI's). Shown on `/device` and in Account → Devices.
+ */
+export type RemoteDeviceClientName = 'hq' | 'hq-vscode';
+export const REMOTE_DEVICE_CLIENT_NAMES: readonly RemoteDeviceClientName[] = ['hq', 'hq-vscode'];
+
+/** The name `/device` and Account → Devices show for a client (an absent name is the CLI). */
+export function remoteClientDisplayName(name: RemoteDeviceClientName | undefined): string {
+  return name === 'hq-vscode' ? 'HQ for VS Code' : 'hq';
+}
+
+/**
+ * hq-vscode §Security: the one-time notice a member gets while Developer access is on. Plain words,
+ * no em dash.
+ */
+export function remoteForwardNoticeSentence(teamName: string): string {
+  return `Developer access is on for ${teamName}. Members who can edit it can forward its ports to their own computer, which reaches programs you run on this machine, such as dev servers.`;
+}
+
 export interface DeviceStartRequest {
-  clientName: 'hq';
+  clientName: RemoteDeviceClientName;
   clientVersion: string;
   platform: string;
   deviceLabel?: string;
@@ -106,11 +168,13 @@ export interface DeviceLookupOrg {
   slug: string;
   name: string;
   requires2fa: boolean;
-  /** How many teams in this org the approver may reach over SSH (the "N teams" sentence, S3). */
+  /** How many teams in this org the approver can edit, so reach from a laptop (the "N teams" sentence, S3). */
   teams: number;
 }
 
 export interface DeviceLookupResponse {
+  /** Which HQ client is asking (hq-vscode). ABSENT from an older HQ: read as `hq`. */
+  clientName?: RemoteDeviceClientName;
   deviceLabel: string;
   clientVersion: string;
   platform: string;
@@ -158,12 +222,30 @@ export interface RemoteWorkspace {
   alias: string;
   name: string;
   state: RemoteWorkspaceState;
-  rights: { ssh: boolean; forward: boolean; attach: boolean };
   /**
-   * False only when the machine's report PROVES its image lacks SSH ("machine needs an update",
-   * D12). A team whose machine never started, or has not reported yet, is not judged (FAIL 6).
+   * SSH was removed on 2026-10-01: the `ssh` right and the `sshDoor` flag are gone from the wire. A
+   * published CLI reads a missing `ssh` as false, exactly what the server sent since the removal.
+   */
+  rights: {
+    forward: boolean;
+    attach: boolean;
+    /**
+     * hq-vscode: the team's files from a laptop. `read` = the attach rule, `write` = the forward
+     * rule (write-capable, plan writable). ABSENT from an older HQ.
+     */
+    files?: { read: boolean; write: boolean };
+  };
+  /**
+   * False only when the machine's report PROVES its image cannot serve `hq forward` (the `forward`
+   * tunnel scope: "machine needs an update", D12). A team whose machine never started, or has not
+   * reported yet, is not judged (FAIL 6). Until train 42 this was judged on SSH.
    */
   supported: boolean;
+  /**
+   * The same judgement for the hq-vscode file routes (`runner_caps.fs`): false only on proof that
+   * the image lacks the file frames. ABSENT from an older HQ.
+   */
+  filesSupported?: boolean;
   hostKeyFingerprint?: string;
   hostKey?: string;
 }
@@ -186,28 +268,11 @@ export type RemoteAccessDeniedReason =
   | 'staged_rollout'
   | 'two_factor_required';
 
-export interface RemoteCapabilities {
-  ssh?: number;
-  /**
-   * The door's `claude` shim report, or `false` on a team whose engines do not include Claude Code
-   * (a Codex-only team, train 26): the shim refuses there, whatever the machine carries.
-   */
-  shim?: number | false;
-  ideBridge?: number;
-  sftp?: boolean;
-  hostKeyFingerprint?: string;
-  hostKey?: string;
-  tunnel?: number;
-}
-
-export interface RemoteCapabilitiesResponse {
-  state: RemoteWorkspaceState;
-  supported: boolean;
-  checkedAt: string;
-  capabilities?: RemoteCapabilities;
-}
-
 export type RemoteScope = 'ssh' | 'forward';
+/**
+ * `hq-vscode` is the HQ extension (its forwards); `vscode` stays Remote-SSH VS Code, so the audit
+ * says which door carried a connection.
+ */
 export type RemoteClientKind =
   | 'vscode'
   | 'cursor'
@@ -216,6 +281,7 @@ export type RemoteClientKind =
   | 'ssh'
   | 'sshfs'
   | 'hq'
+  | 'hq-vscode'
   | 'unknown';
 export const REMOTE_CLIENT_KINDS: readonly RemoteClientKind[] = [
   'vscode',
@@ -225,6 +291,7 @@ export const REMOTE_CLIENT_KINDS: readonly RemoteClientKind[] = [
   'ssh',
   'sshfs',
   'hq',
+  'hq-vscode',
   'unknown',
 ];
 
@@ -267,6 +334,25 @@ export interface RemoteSessionSummary {
    * older HQ) reads as false, so the org kill switch holds whatever CLI version attaches.
    */
   localEchoAvailable?: boolean;
+  /** hq-vscode: which agent runs in it. ABSENT from an older HQ. */
+  engine?: RemoteSessionEngine;
+  /** hq-vscode: this member owns the session (the tree's "you"). ABSENT from an older HQ. */
+  ownerIsMe?: boolean;
+}
+
+/** The engine a session runs, as the extension names it. */
+export type RemoteSessionEngine = 'claude' | 'codex';
+
+/** `POST …/workspaces/:ws/wake` (hq-vscode F10). */
+export interface RemoteWakeResponse {
+  state: 'waking' | 'running';
+}
+
+/** `POST …/workspaces/:ws/sessions` (hq-vscode F12). */
+export interface RemoteSessionCreateRequest {
+  engine?: RemoteSessionEngine;
+  cols: number;
+  rows: number;
 }
 
 export interface ShimSessionCreateRequest {
@@ -290,6 +376,15 @@ export interface ShimSessionCreateResponse {
 export const REMOTE_SHIM_ENGINE_UNSUPPORTED_MESSAGE =
   'This team runs Codex; the claude command works on Claude teams.';
 
+/**
+ * SSH to team machines is gone (2026-10-01): a machine reachable by a shell exposes its secrets. The
+ * one sentence for every place that says so: the `410 SSH_REMOVED` answer to an `ssh` connect (old
+ * published CLIs print a 410's message word for word) and the `hq ssh` / `hq ssh-proxy` / `hq open`
+ * stubs. Plain words, no em dash.
+ */
+export const SSH_REMOVED_MESSAGE =
+  'SSH access to team machines was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.';
+
 /** `<remoteHome>/.hq/current.json` (events.json CurrentConnectionFile). Written by the door. */
 export interface CurrentConnectionFile {
   v: 1;
@@ -305,15 +400,8 @@ export interface CurrentConnectionFile {
 // Cookie (HQ UI) surfaces
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RemotePresenceClient =
-  | 'vscode'
-  | 'cursor'
-  | 'zed'
-  | 'jetbrains'
-  | 'sftp'
-  | 'terminal'
-  | 'unknown'
-  | 'forward';
+/** SSH removed (2026-10-01): the only connections left on a team are forwards. */
+export type RemotePresenceClient = 'forward' | 'unknown';
 
 export interface RemotePresenceEntry {
   connectionId: string;
@@ -331,6 +419,8 @@ export interface RemotePresenceResponse {
 
 export interface RemoteGrantRow {
   id: string;
+  /** Which HQ client holds the grant (hq-vscode). ABSENT from an older HQ: read as `hq`. */
+  clientName?: RemoteDeviceClientName;
   userId: string;
   displayName: string;
   deviceLabel: string;
@@ -352,22 +442,23 @@ export interface RemoteConnectionRow {
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Owner copy (review W7 / Test Plan A6e): ONE source for the Settings description and the consent,
-// served by `GET /api/org/remote/availability` and rendered by the Settings page. Decision 22: both
-// say that SSH shells receive the team's stored secrets and that SSH output is not masked.
-// Decision 18: never names VS Code. No em dashes.
+// served by `GET /api/org/remote/availability` and rendered by the Settings page. Decision 18: never
+// names VS Code. No em dashes. (The SSH door's copy went with SSH on 2026-10-01.)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export const REMOTE_ACCESS_SETTING_DESCRIPTION =
-  "Let members with raw-shell rights connect from their laptop editor over SSH. Members connected over SSH receive this team's stored secrets in their shell, and SSH output is not masked. Every connection is recorded in the audit log.";
+/**
+ * hq-vscode decision 13: "Developer access" (`remote_access_enabled`) is files, terminal attach and
+ * ports from a member's own computer, and no shell (FEATURE.md §Wireframes, HQ web Settings →
+ * Security). No em dashes; "off", never "asleep".
+ */
+export const REMOTE_DEVELOPER_ACCESS_DESCRIPTION =
+  'Members who can edit a team can open its files, join its terminals and forward its ports from their own computer (HQ for VS Code, the hq CLI). Everyone on a team machine shares one system account, so a forwarded port can reach any program listening on that machine.';
 
-export const REMOTE_ACCESS_CONSENT_PARAGRAPHS: readonly string[] = [
-  "Members who can use the Advanced terminal will be able to connect to their team's machine from their own computer over SSH, using Remote-SSH-compatible editors such as Cursor, JetBrains Gateway or Zed, or sshfs.",
-  "Everyone on a team machine shares one system account. Anyone connected over SSH can read, and can use, everything any session on that machine can read, including other members' Claude sign-ins, the team's session history, and the secrets passed to running sessions. Every member with a Claude sign-in on these machines will be notified and can remove it.",
-  "Files in the shared team folder (editor tasks set to run on open, git hooks, .envrc) run in every member's editor and outlive a member's removal.",
-  "Members connected over SSH receive this team's stored secrets and variables in their shell environment, and output over SSH is not masked, so a secret can be shown on their computer. Every connection records which secret names were delivered. Secret masking in HQ reduces accidental leaks; it is not a security boundary.",
-  'Editor extensions and tools your members install run on the team machine with the same access.',
-  "Machines can reach the internet. Tunnels or public exposure your members create are your organisation's responsibility under our Acceptable Use Policy.",
-  'Every connection is recorded in your audit log. You can turn this off at any time; open connections close within 30 seconds.',
+export const REMOTE_DEVELOPER_ACCESS_CONSENT_PARAGRAPHS: readonly string[] = [
+  'Members who can edit a team will be able to open its files, join its terminals and forward its ports from their own computer, using HQ for VS Code or the hq command line tool. None of this opens a shell on the team machine.',
+  "Everyone on a team machine shares one system account, so a forwarded port can reach any program listening on that machine, including dev servers other members run there. Each team's members are told this once.",
+  'Files and terminals keep the permissions they have in HQ: viewers can look but cannot type or save, secrets stay masked, and protected template files stay read-only.',
+  'Every connection and every saved file is recorded in your audit log. You can turn this off at any time; open connections close within 30 seconds.',
 ];
 
 /** `GET /api/org/remote/availability` — whether Settings may offer the switch, and what it says. */
@@ -378,16 +469,30 @@ export interface RemoteAvailabilityResponse {
   allowListed: boolean;
   /** The plan carries `remote_access`. */
   planIncludes: boolean;
-  /** The owner-facing copy (A6e). */
-  copy: { setting: string; consent: readonly string[] };
+  /**
+   * Ticket (am): the org is on the api serving tier, which remote access needs (the gate refuses
+   * any other with 403 `serving_tier`). Absent from an older server: the client does not judge.
+   */
+  servingTierReady?: boolean;
+  /**
+   * hq-vscode decision 13: the Developer access switch's description and consent (A6e). The SSH
+   * door's `copy` went with SSH on 2026-10-01.
+   */
+  developerCopy?: { setting: string; consent: readonly string[] };
   /**
    * Teams whose RUNNING machine booted before remote access was turned on, so it must restart
-   * before SSH works (its relay still accepts its static bearer: DEF-201 condition d, review W11).
+   * before forwarded ports work (its relay still accepts its static bearer: DEF-201 condition d,
+   * review W11).
    */
   restartNeeded: string[];
 }
 
 export interface RemoteMemberNotice {
+  /**
+   * `forward` (hq-vscode): Developer access's one-time port notice. `sign_in` was the SSH door's
+   * DEF-201 notice; SSH was removed on 2026-10-01 and the server no longer lists it.
+   */
+  kind?: 'sign_in' | 'forward';
   workspaceId: string;
   workspaceName: string;
   otherMembers: number;

@@ -110,7 +110,6 @@ export async function login(ctx: Ctx, opts: { host?: string }): Promise<number> 
       if (approved.orgs.length > 0) {
         ctx.out(`Orgs: ${approved.orgs.map((o) => `${o.name} (${o.slug})`).join(', ')}`);
       }
-      ctx.out('Next: hq ssh --config');
       return 0;
     }
     if (

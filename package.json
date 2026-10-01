@@ -1,7 +1,7 @@
 {
   "name": "@aiworkforceoneofficial/hq",
-  "version": "0.1.0",
-  "description": "Connect your computer to your AI Workforce One HQ team machines: SSH, attach and port forwarding.",
+  "version": "0.2.0",
+  "description": "Connect your computer to your AI Workforce One HQ team machines: attach and port forwarding.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",

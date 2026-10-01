@@ -1,36 +1,23 @@
 /**
  * `hq` — connect this computer to your HQ team machines. Entry point of the bundled `dist/hq.cjs`.
  */
+import { SSH_REMOVED_MESSAGE } from '@kpa/shared/remote.types';
 import { NotLoggedInError, HqApiError } from './api.js';
 import { flagString, parseArgs, type ParsedArgs } from './args.js';
 import { attach } from './commands/attach.js';
+import { renderUsage } from './command-manifest.js';
 import { forward } from './commands/forward.js';
 import { login } from './commands/login.js';
 import { logout } from './commands/logout.js';
-import { sshConfig } from './commands/ssh-config.js';
-import { sshProxy } from './commands/ssh-proxy.js';
 import { status } from './commands/status.js';
-import { open, up } from './commands/up.js';
+import { up } from './commands/up.js';
 import { defaultCtx, type Ctx } from './context.js';
 import { resolveLocalEchoMode } from './local-echo/mode.js';
 import { TeamNotFoundError } from './teams.js';
 import { HQ_VERSION } from './version.js';
 
-export const USAGE = `hq ${HQ_VERSION}: connect this computer to your HQ team machines
-
-Usage:
-  hq login [--host <url>]            sign this computer in (approve it in your browser)
-  hq ssh --config                    write ~/.ssh/hq_config for your teams
-  hq status                          who you are and the teams you can reach
-  hq up <team>                       wake a team machine
-  hq open cursor|zed <team>          wake a team, then open it in that editor
-  hq open --with "<cmd {host} {dir}>" <team>
-  hq attach <session> [--team <t>]   join an HQ session in this terminal (Ctrl-] to detach)
-      [--local-echo[=auto|always|off]] show what you type instantly (or set HQ_LOCAL_ECHO)
-  hq forward <port> [--local <port>] [--team <t>]
-  hq logout                          sign out and revoke this computer's access
-
-<team> is the hq-… name from hq status, or the team's name. --org <slug> narrows either.`;
+/** `hq --help`, rendered from the command manifest (the same source as /docs/cli/reference). */
+export const USAGE = renderUsage(HQ_VERSION);
 
 export async function run(argv: string[], ctx: Ctx = defaultCtx()): Promise<number> {
   const args: ParsedArgs = parseArgs(argv);
@@ -54,39 +41,19 @@ export async function run(argv: string[], ctx: Ctx = defaultCtx()): Promise<numb
         return await logout(ctx);
       case 'status':
         return await status(ctx);
+      // SSH to team machines was removed on 2026-10-01. The SSH commands stay only to say so, so a
+      // script or an old ~/.ssh/hq_config entry gets the reason instead of "unknown command".
       case 'ssh':
-        if (args.flags.has('config')) return await sshConfig(ctx);
-        ctx.err('hq: to connect, run hq ssh --config once, then ssh <hq-name>.');
-        return 2;
-      case 'ssh-proxy': {
-        const workspace = flagString(args, 'workspace');
-        if (!workspace || !org) {
-          ctx.err(
-            'hq: ssh-proxy needs --workspace <id> and --org <slug> (it is written by hq ssh --config).',
-          );
-          return 255;
-        }
-        return await sshProxy(
-          ctx,
-          { workspace, org, wake: args.flags.has('wake') },
-          { stdin: process.stdin, stdout: process.stdout },
-        );
-      }
+      case 'open':
+        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        return 1;
+      case 'ssh-proxy':
+        // What ssh runs from an old `Host hq-…` entry: 255 is ssh's own "could not connect".
+        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        return 255;
       case 'up':
         if (!rest[0]) break;
         return await up(ctx, { team: rest[0], ...(org ? { org } : {}) });
-      case 'open': {
-        const withCmd = flagString(args, 'with');
-        const team = withCmd ? rest[0] : rest[1];
-        const editor = withCmd ? undefined : rest[0];
-        if (!team) break;
-        return await open(ctx, {
-          team,
-          ...(editor ? { editor } : {}),
-          ...(withCmd ? { with: withCmd } : {}),
-          ...(org ? { org } : {}),
-        });
-      }
       case 'attach': {
         if (!rest[0]) break;
         const team = flagString(args, 'team');
@@ -137,7 +104,7 @@ const isMain =
   typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module;
 if (isMain) {
   void run(process.argv.slice(2)).then((code) => {
-    // Flush stdout first (a pipe is asynchronous on macOS: ssh must get the last bytes), then exit
+    // Flush stdout first (a pipe is asynchronous on macOS: a reader must get the last bytes), then exit
     // so a paused stdin or an idle keep-alive cannot hold the process open.
     process.stdout.write('', () => process.exit(code));
   });

@@ -18,15 +18,12 @@
  */
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import type { StoredTokens } from '@hq/client/api.js';
 import { hqPaths } from './paths.js';
 
-const SERVICE = 'hq.aiworkforceone';
+export type { StoredTokens };
 
-export interface StoredTokens {
-  accessToken: string;
-  accessExpiresAt: string;
-  refreshToken: string;
-}
+const SERVICE = 'hq.aiworkforceone';
 
 type Backend = 'macos' | 'libsecret' | 'file';
 

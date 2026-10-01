@@ -2279,7 +2279,7 @@ var require_websocket = __commonJS({
     var http = require("http");
     var net2 = require("net");
     var tls = require("tls");
-    var { randomBytes: randomBytes5, createHash: createHash3 } = require("crypto");
+    var { randomBytes: randomBytes3, createHash: createHash3 } = require("crypto");
     var { Duplex, Readable } = require("stream");
     var { URL: URL2 } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2817,7 +2817,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes5(16).toString("base64");
+      const key = randomBytes3(16).toString("base64");
       const request = isSecure ? https.request : http.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -3228,7 +3228,7 @@ var require_stream = __commonJS({
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open() {
             duplex._final(callback);
           });
           return;
@@ -3249,7 +3249,7 @@ var require_stream = __commonJS({
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open2() {
+          ws.once("open", function open() {
             duplex._write(chunk, encoding, callback);
           });
           return;
@@ -8764,11 +8764,6 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 
-// cli/src/api.ts
-var import_node_crypto2 = require("node:crypto");
-var import_node_fs3 = require("node:fs");
-var import_node_path2 = __toESM(require("node:path"), 1);
-
 // shared/src/remote.types.ts
 var REMOTE_ACCESS_TTL_SEC = 15 * 60;
 var REMOTE_REFRESH_IDLE_TTL_SEC = 30 * 24 * 60 * 60;
@@ -8778,52 +8773,26 @@ var HQ_HEADER_NONCE = "x-hq-nonce";
 var HQ_HEADER_DEVICE_SIG = "x-hq-device-sig";
 var HQ_HEADER_CONNECT_CODE = "x-hq-connect-code";
 var HQ_HEADER_CLI_VERSION = "x-hq-cli-version";
-function deviceSignaturePayload(nonce, method, path4, bodySha256Hex) {
+var HQ_HEADER_CLIENT = "x-hq-client";
+var HQ_HEADER_WANT_NONCE = "x-hq-want-nonce";
+function deviceSignaturePayload(nonce, method, path3, bodySha256Hex) {
   return `${nonce}
 ${method.toUpperCase()}
-${path4}
+${path3}
 ${bodySha256Hex.toLowerCase()}`;
 }
-var REMOTE_CLOSE_UNAUTHORIZED = 4401;
-var REMOTE_CLOSE_SSH_KEY_REFUSED = 4420;
-var REMOTE_CLOSE_SSH_CONN_REVOKED = 4421;
-var REMOTE_CLOSE_SSH_IDLE_SLEEP = 4422;
-var REMOTE_CLOSE_SSH_LIFETIME = 4423;
-var REMOTE_CLOSE_RUNNER_UNAVAILABLE = 4503;
+var SSH_REMOVED_MESSAGE = "SSH access to team machines was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.";
 function workspaceAlias(workspaceId, hexChars = 8) {
   return `hq-${workspaceId.replace(/-/g, "").slice(0, hexChars).toLowerCase()}`;
 }
 
-// cli/src/device-key.ts
-var import_node_crypto = require("node:crypto");
-var import_node_fs = require("node:fs");
-
-// cli/src/paths.ts
-var import_node_os = __toESM(require("node:os"), 1);
+// hq-client/src/api.ts
+var import_node_crypto3 = require("node:crypto");
+var import_node_fs2 = require("node:fs");
 var import_node_path = __toESM(require("node:path"), 1);
-function hqHome(env = process.env) {
-  const override = env.HQ_HOME;
-  return typeof override === "string" && override.length > 0 ? override : import_node_path.default.join(import_node_os.default.homedir(), ".hq");
-}
-var hqPaths = (env = process.env) => {
-  const home = hqHome(env);
-  return {
-    home,
-    keysDir: import_node_path.default.join(home, "keys"),
-    privateKey: import_node_path.default.join(home, "keys", "id_ed25519"),
-    publicKey: import_node_path.default.join(home, "keys", "id_ed25519.pub"),
-    knownHosts: import_node_path.default.join(home, "known_hosts"),
-    state: import_node_path.default.join(home, "state.json"),
-    credentials: import_node_path.default.join(home, "credentials.json"),
-    binDir: import_node_path.default.join(home, "bin")
-  };
-};
-function sshDir(env = process.env) {
-  const override = env.HQ_SSH_DIR;
-  return typeof override === "string" && override.length > 0 ? override : import_node_path.default.join(import_node_os.default.homedir(), ".ssh");
-}
 
-// cli/src/device-key.ts
+// hq-client/src/device-key.ts
+var import_node_crypto = require("node:crypto");
 function sshString(buf) {
   const len = Buffer.alloc(4);
   len.writeUInt32BE(buf.length, 0);
@@ -8908,35 +8877,477 @@ function keyObjectFromSeed(seed32, pub32) {
 function publicLineOf(pub32) {
   return `ssh-ed25519 ${publicBlob(pub32).toString("base64")}`;
 }
-function ensureDeviceKey(env = process.env, comment = "hq") {
-  const paths = hqPaths(env);
-  if ((0, import_node_fs.existsSync)(paths.privateKey)) return loadDeviceKey(env);
-  (0, import_node_fs.mkdirSync)(paths.keysDir, { recursive: true, mode: 448 });
-  (0, import_node_fs.chmodSync)(paths.home, 448);
+function generateDeviceKeyMaterial() {
   const { publicKey, privateKey } = (0, import_node_crypto.generateKeyPairSync)("ed25519");
   const jwkPriv = privateKey.export({ format: "jwk" });
-  const seed32 = Buffer.from(jwkPriv.d, "base64url");
-  const pub32 = Buffer.from(publicKey.export({ format: "jwk" }).x, "base64url");
-  (0, import_node_fs.writeFileSync)(paths.privateKey, toOpenSshPrivateKey(seed32, pub32, comment), { mode: 384 });
-  (0, import_node_fs.writeFileSync)(paths.publicKey, `${publicLineOf(pub32)} ${comment}
-`, { mode: 420 });
-  return { publicLine: publicLineOf(pub32), privateKey: keyObjectFromSeed(seed32, pub32) };
+  return {
+    seed32: Buffer.from(jwkPriv.d, "base64url"),
+    pub32: Buffer.from(publicKey.export({ format: "jwk" }).x, "base64url")
+  };
 }
-function loadDeviceKey(env = process.env) {
-  const { seed32, pub32 } = fromOpenSshPrivateKey((0, import_node_fs.readFileSync)(hqPaths(env).privateKey, "utf8"));
+function deviceKeyFromOpenSsh(pem) {
+  const { seed32, pub32 } = fromOpenSshPrivateKey(pem);
   return { publicLine: publicLineOf(pub32), privateKey: keyObjectFromSeed(seed32, pub32) };
 }
 function sha256Hex(data) {
   return (0, import_node_crypto.createHash)("sha256").update(data).digest("hex");
 }
-function signRequest(key, nonce, method, path4, body) {
-  const payload = deviceSignaturePayload(nonce, method, path4, sha256Hex(body));
+function signRequest(key, nonce, method, path3, body) {
+  const payload = deviceSignaturePayload(nonce, method, path3, sha256Hex(body));
   return (0, import_node_crypto.sign)(null, Buffer.from(payload, "utf8"), key).toString("base64");
+}
+
+// hq-client/src/file-lock.ts
+var import_node_fs = require("node:fs");
+var import_node_crypto2 = require("node:crypto");
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+var FileLockBusyError = class extends Error {
+  constructor(file) {
+    super("Another process is holding the lock.");
+    this.file = file;
+    this.name = "FileLockBusyError";
+  }
+  file;
+};
+function breakStale(file, staleMs, aside) {
+  try {
+    (0, import_node_fs.renameSync)(file, aside);
+  } catch {
+    return;
+  }
+  try {
+    if (Date.now() - (0, import_node_fs.statSync)(aside).mtimeMs <= staleMs) {
+      try {
+        (0, import_node_fs.linkSync)(aside, file);
+      } catch {
+      }
+    }
+  } finally {
+    (0, import_node_fs.rmSync)(aside, { force: true });
+  }
+}
+async function acquireFileLock(file, opts = {}) {
+  const staleMs = opts.staleMs ?? 1e4;
+  const heartbeatMs = opts.heartbeatMs ?? Math.max(250, Math.floor(staleMs / 3));
+  const deadline = Date.now() + (opts.waitMs ?? 1e4);
+  const mine = `${process.pid}:${(0, import_node_crypto2.randomBytes)(8).toString("hex")}`;
+  let delay = 10;
+  for (; ; ) {
+    try {
+      const fd = (0, import_node_fs.openSync)(file, "wx", 384);
+      try {
+        (0, import_node_fs.writeSync)(fd, mine);
+      } finally {
+        (0, import_node_fs.closeSync)(fd);
+      }
+      const beat = setInterval(() => {
+        try {
+          if ((0, import_node_fs.readFileSync)(file, "utf8") !== mine) return;
+          const now = /* @__PURE__ */ new Date();
+          (0, import_node_fs.utimesSync)(file, now, now);
+        } catch {
+        }
+      }, heartbeatMs);
+      beat.unref?.();
+      return () => {
+        clearInterval(beat);
+        try {
+          if ((0, import_node_fs.readFileSync)(file, "utf8") === mine) (0, import_node_fs.rmSync)(file, { force: true });
+        } catch {
+        }
+      };
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+    }
+    let age = 0;
+    try {
+      age = Date.now() - (0, import_node_fs.statSync)(file).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (age > staleMs) {
+      opts.beforeBreak?.();
+      breakStale(file, staleMs, `${file}.stale-${mine.replace(":", "-")}`);
+      continue;
+    }
+    if (Date.now() > deadline) throw new FileLockBusyError(file);
+    await sleep(delay);
+    delay = Math.min(delay * 2, 250);
+  }
+}
+
+// hq-client/src/api.ts
+var HqApiError = class extends Error {
+  constructor(status2, code, message, details) {
+    super(message);
+    this.status = status2;
+    this.code = code;
+    this.details = details;
+    this.name = "HqApiError";
+  }
+  status;
+  code;
+  details;
+};
+var NotLoggedInError = class extends Error {
+  constructor(message = "hq: you are not logged in on this computer. Run hq login.") {
+    super(message);
+    this.name = "NotLoggedInError";
+  }
+};
+var RefreshBusyError = class extends Error {
+  constructor() {
+    super("Another window or process on this computer is renewing this login. Try again.");
+    this.name = "RefreshBusyError";
+  }
+};
+var RefreshNeedsRenewingError = class extends Error {
+  constructor(message = "hq: your HQ login on this computer needs renewing. Run hq login.") {
+    super(message);
+    this.name = "RefreshNeedsRenewingError";
+  }
+};
+var RefreshUnansweredError = class extends Error {
+  constructor(cause) {
+    super("the refresh request went unanswered", { cause });
+    this.name = "RefreshUnansweredError";
+  }
+};
+var REFRESH_MARGIN_MS = 2 * 60 * 1e3;
+var REFRESH_LOCK_STALE_MS = 3e4;
+var REFRESH_LOCK_WAIT_MS = 2e4;
+var REFRESH_LOCK_HEARTBEAT_MS = 5e3;
+var NONCE_MAX_AGE_MS = 45e3;
+var REFRESH_REPRESENT_WINDOW_MS = 3e4;
+var realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+var HqClient = class {
+  host;
+  key;
+  fetchFn;
+  now;
+  store;
+  clientHeaders;
+  nonce = null;
+  refreshing = null;
+  lockDir;
+  lockName;
+  opts;
+  constructor(opts) {
+    this.opts = opts;
+    this.host = opts.host.replace(/\/+$/, "");
+    this.key = opts.key;
+    this.fetchFn = opts.fetch ?? globalThis.fetch;
+    this.now = opts.now ?? Date.now;
+    this.store = opts.store;
+    this.clientHeaders = { ...opts.clientHeaders ?? {} };
+    this.lockDir = opts.lockDir;
+    this.lockName = opts.lockName;
+  }
+  /** The lock file's name for THIS host (one login per host, so one lock per host). */
+  refreshLockName() {
+    return this.lockName ?? `refresh-${(0, import_node_crypto3.createHash)("sha256").update(this.host).digest("hex").slice(0, 12)}.lock`;
+  }
+  /** The headers this client sends on every call (a copy). */
+  headers() {
+    return { ...this.clientHeaders };
+  }
+  isFresh(t) {
+    return Date.parse(t.accessExpiresAt) - this.now() > REFRESH_MARGIN_MS;
+  }
+  async tokens(fresh = false) {
+    const t = await (fresh ? this.store.load(this.host, { fresh: true }) : this.store.load(this.host));
+    if (!t) throw new NotLoggedInError();
+    return t;
+  }
+  /** A live access token, rotated first when it is about to expire. */
+  async accessToken() {
+    return (await this.ensureFresh()).accessToken;
+  }
+  async ensureFresh() {
+    const t = await this.tokens();
+    if (this.isFresh(t)) return t;
+    if (t.needsRenewing) throw new RefreshNeedsRenewingError();
+    this.refreshing ??= this.refreshAcrossProcesses().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+  /**
+   * Rotate under the cross-process lock. After taking it, re-read the store FRESH (review M-b): when
+   * another process rotated while we waited, its pair is fresh and we adopt it without touching the
+   * server. If the server still answers `REFRESH_RACE` (a process that raced us WITHOUT the lock,
+   * e.g. an older client), the pair it stored is adopted the same way, and otherwise the token is
+   * marked `needsRenewing` and never presented again (§7c step 4). A refresh that went UNANSWERED
+   * is re-presented once, still under the lock, within `REFRESH_REPRESENT_WINDOW_MS` of the first
+   * presentation (§7c step 2b, review M-a); past that it is marked too. A waiter whose deadline
+   * passed while the holder was alive re-reads the store once and otherwise gives up: it never
+   * presents the token.
+   */
+  async refreshAcrossProcesses() {
+    (0, import_node_fs2.mkdirSync)(this.lockDir, { recursive: true, mode: 448 });
+    let release;
+    try {
+      release = await acquireFileLock(import_node_path.default.join(this.lockDir, this.refreshLockName()), {
+        staleMs: this.opts.lockStaleMs ?? REFRESH_LOCK_STALE_MS,
+        waitMs: this.opts.lockWaitMs ?? REFRESH_LOCK_WAIT_MS,
+        heartbeatMs: REFRESH_LOCK_HEARTBEAT_MS
+      });
+    } catch (err) {
+      if (!(err instanceof FileLockBusyError)) throw err;
+      const after = await this.tokens(true);
+      if (this.isFresh(after)) return after;
+      throw new RefreshBusyError();
+    }
+    try {
+      const current = await this.tokens(true);
+      if (this.isFresh(current)) return current;
+      if (current.needsRenewing) throw new RefreshNeedsRenewingError();
+      const firstAt = this.now();
+      try {
+        return await this.refresh(current);
+      } catch (err) {
+        if (err instanceof RefreshUnansweredError)
+          return await this.representOnce(current, firstAt);
+        return await this.afterRace(current, err);
+      }
+    } finally {
+      release();
+    }
+  }
+  /** §7c step 2b: the first presentation went unanswered. Still under the lock. */
+  async representOnce(current, firstAt) {
+    const again = await this.tokens(true);
+    if (again.refreshToken !== current.refreshToken) return again;
+    if (this.now() - firstAt > REFRESH_REPRESENT_WINDOW_MS) {
+      await this.markNeedsRenewing(current);
+      throw new RefreshNeedsRenewingError();
+    }
+    try {
+      return await this.refresh(current);
+    } catch (err) {
+      if (err instanceof RefreshUnansweredError) {
+        await this.markNeedsRenewing(current);
+        throw new RefreshNeedsRenewingError();
+      }
+      return await this.afterRace(current, err);
+    }
+  }
+  /**
+   * §7c step 4: after `409 REFRESH_RACE`, re-read the store (fresh) for the racer's pair; if none
+   * appears the token is marked and never presented again. Any other error is rethrown as it is.
+   */
+  async afterRace(current, err) {
+    if (err instanceof HqApiError && err.code === "REFRESH_RACE") {
+      const rereads = Math.max(1, this.opts.raceRereads ?? 1);
+      for (let i = 0; i < rereads; i++) {
+        if (i > 0) await realSleep(this.opts.raceRereadMs ?? 500);
+        const after = await this.tokens(true);
+        if (after.refreshToken !== current.refreshToken) return after;
+      }
+      await this.markNeedsRenewing(current);
+    }
+    throw err;
+  }
+  async markNeedsRenewing(current) {
+    await this.store.save(this.host, { ...current, needsRenewing: true });
+  }
+  async fetchWithTimeout(url, init) {
+    const ms = this.opts.refreshTimeoutMs;
+    if (ms === void 0) return this.fetchFn(url, init);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      return await this.fetchFn(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  /** Rotate the pair. Device-signed; the nonce is fetched with the REFRESH token as the bearer. */
+  async refresh(t) {
+    const nonceRes = await this.fetchWithTimeout(`${this.host}/api/remote/nonce`, {
+      headers: { Authorization: `Bearer ${t.refreshToken}`, ...this.clientHeaders }
+    });
+    if (!nonceRes.ok) throw await this.toError(nonceRes);
+    const { nonce } = await nonceRes.json();
+    const path3 = "/api/remote/token/refresh";
+    const body = JSON.stringify({ refreshToken: t.refreshToken });
+    let res;
+    try {
+      res = await this.fetchWithTimeout(`${this.host}${path3}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...this.clientHeaders,
+          [HQ_HEADER_NONCE]: nonce,
+          [HQ_HEADER_DEVICE_SIG]: signRequest(this.key, nonce, "POST", path3, body)
+        },
+        body
+      });
+    } catch (err) {
+      throw new RefreshUnansweredError(err);
+    }
+    if (!res.ok) throw await this.toError(res);
+    const pair = await res.json();
+    const next = {
+      accessToken: pair.accessToken,
+      accessExpiresAt: pair.accessExpiresAt,
+      refreshToken: pair.refreshToken
+    };
+    await this.store.save(this.host, next);
+    return next;
+  }
+  /**
+   * A single-use nonce: the last response's while it is younger than `NONCE_MAX_AGE_MS`, or a new
+   * one (security review B1).
+   */
+  async takeNonce() {
+    const cached = this.nonce;
+    this.nonce = null;
+    if (cached && this.now() - cached.at < NONCE_MAX_AGE_MS) return cached.value;
+    return this.fetchNonce();
+  }
+  /** `GET /api/remote/nonce`, never the cache. */
+  async fetchNonce() {
+    const res = await this.fetchFn(`${this.host}/api/remote/nonce`, {
+      headers: {
+        Authorization: `Bearer ${await this.accessToken()}`,
+        ...this.clientHeaders
+      }
+    });
+    if (!res.ok) throw await this.toError(res);
+    return (await res.json()).nonce;
+  }
+  /** Headers for a signed WebSocket upgrade (`GET <path>`, empty body). */
+  async upgradeHeaders(path3, org, extra = {}) {
+    const token = await this.accessToken();
+    const nonce = await this.takeNonce();
+    return {
+      Authorization: `Bearer ${token}`,
+      [HQ_HEADER_ORG]: org,
+      [HQ_HEADER_NONCE]: nonce,
+      [HQ_HEADER_DEVICE_SIG]: signRequest(this.key, nonce, "GET", path3, ""),
+      ...this.clientHeaders,
+      ...extra
+    };
+  }
+  async request(method, path3, opts = {}) {
+    const res = await this.send(method, path3, {
+      ...opts.body !== void 0 ? { json: opts.body } : {},
+      ...opts.org ? { org: opts.org } : {},
+      ...opts.signed ? { signed: true } : {}
+    });
+    if (!res.ok) throw await this.toError(res);
+    if (res.status === 204) return { status: 204, body: void 0 };
+    return { status: res.status, body: await res.json() };
+  }
+  /**
+   * The raw exchange under `request` (hq-vscode phase 2: the file routes need the bytes, the status
+   * and the headers). `json` is sent as JSON, `raw` as `application/octet-stream`; a signed call
+   * signs the exact bytes sent and the path WITH its query (S5). Returns the Response whatever its
+   * status (the caller reads 304/412/...); only the one fresh-nonce retry of a signed 401 happens
+   * here (security review B1).
+   */
+  async send(method, path3, opts = {}) {
+    const token = await this.accessToken();
+    const body = opts.raw !== void 0 ? Buffer.from(opts.raw) : opts.json === void 0 ? "" : JSON.stringify(opts.json);
+    const hasBody = opts.raw !== void 0 || opts.json !== void 0;
+    const headers = {
+      ...opts.headers ?? {},
+      Authorization: `Bearer ${token}`,
+      ...this.clientHeaders
+    };
+    if (opts.json !== void 0) headers["content-type"] = "application/json";
+    if (opts.raw !== void 0) headers["content-type"] = "application/octet-stream";
+    if (opts.org) headers[HQ_HEADER_ORG] = opts.org;
+    const once = async (freshNonce) => {
+      if (opts.signed) {
+        const nonce = freshNonce ? await this.fetchNonce() : await this.takeNonce();
+        headers[HQ_HEADER_NONCE] = nonce;
+        headers[HQ_HEADER_DEVICE_SIG] = signRequest(this.key, nonce, method, path3, body);
+      }
+      const r = await this.fetchFn(`${this.host}${path3}`, {
+        method,
+        headers,
+        ...hasBody ? { body: typeof body === "string" ? body : new Uint8Array(body) } : {}
+      });
+      const next = r.headers.get(HQ_HEADER_NONCE);
+      if (next) this.nonce = { value: next, at: this.now() };
+      return r;
+    };
+    let res = await once(false);
+    if (res.status === 401 && opts.signed) {
+      await res.arrayBuffer().catch(() => void 0);
+      res = await once(true);
+    }
+    return res;
+  }
+  /**
+   * Is this login really gone (security review B1)? Only an UNSIGNED `GET /api/remote/orgs` that
+   * answers 401 (or a refresh HQ refuses with 401, or no stored login) says so: a signed call's 401
+   * can be a nonce or a signature problem. Unreachable or any other answer: not confirmed.
+   */
+  async confirmRevoked() {
+    try {
+      await this.request("GET", "/api/remote/orgs");
+      return false;
+    } catch (err) {
+      return err instanceof NotLoggedInError || err instanceof HqApiError && err.status === 401;
+    }
+  }
+  async toError(res) {
+    let body = {};
+    try {
+      body = await res.json();
+    } catch {
+    }
+    const message = typeof body.error === "string" ? body.error : `HQ answered ${res.status}`;
+    return new HqApiError(
+      res.status,
+      typeof body.code === "string" ? body.code : void 0,
+      message,
+      typeof body.details === "object" && body.details !== null ? body.details : void 0
+    );
+  }
+};
+async function postJson(fetchFn, url, body, clientHeaders = {}) {
+  const res = await fetchFn(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...clientHeaders },
+    body: JSON.stringify(body)
+  });
+  let parsed = void 0;
+  try {
+    parsed = await res.json();
+  } catch {
+    parsed = void 0;
+  }
+  return { status: res.status, body: parsed };
 }
 
 // cli/src/keychain.ts
 var import_node_child_process = require("node:child_process");
-var import_node_fs2 = require("node:fs");
+var import_node_fs3 = require("node:fs");
+
+// cli/src/paths.ts
+var import_node_os = __toESM(require("node:os"), 1);
+var import_node_path2 = __toESM(require("node:path"), 1);
+function hqHome(env = process.env) {
+  const override = env.HQ_HOME;
+  return typeof override === "string" && override.length > 0 ? override : import_node_path2.default.join(import_node_os.default.homedir(), ".hq");
+}
+var hqPaths = (env = process.env) => {
+  const home = hqHome(env);
+  return {
+    home,
+    keysDir: import_node_path2.default.join(home, "keys"),
+    privateKey: import_node_path2.default.join(home, "keys", "id_ed25519"),
+    publicKey: import_node_path2.default.join(home, "keys", "id_ed25519.pub"),
+    state: import_node_path2.default.join(home, "state.json"),
+    credentials: import_node_path2.default.join(home, "credentials.json")
+  };
+};
+
+// cli/src/keychain.ts
 var SERVICE = "hq.aiworkforceone";
 function hasTool(cmd) {
   try {
@@ -8965,18 +9376,18 @@ function warnFile(reason = "no-tool") {
 }
 function readFileStore(env) {
   const p = hqPaths(env).credentials;
-  if (!(0, import_node_fs2.existsSync)(p)) return {};
+  if (!(0, import_node_fs3.existsSync)(p)) return {};
   try {
-    return JSON.parse((0, import_node_fs2.readFileSync)(p, "utf8"));
+    return JSON.parse((0, import_node_fs3.readFileSync)(p, "utf8"));
   } catch {
     return {};
   }
 }
 function writeFileStore(env, data) {
   const paths = hqPaths(env);
-  (0, import_node_fs2.mkdirSync)(paths.home, { recursive: true, mode: 448 });
-  (0, import_node_fs2.writeFileSync)(paths.credentials, JSON.stringify(data), { mode: 384 });
-  (0, import_node_fs2.chmodSync)(paths.credentials, 384);
+  (0, import_node_fs3.mkdirSync)(paths.home, { recursive: true, mode: 448 });
+  (0, import_node_fs3.writeFileSync)(paths.credentials, JSON.stringify(data), { mode: 384 });
+  (0, import_node_fs3.chmodSync)(paths.credentials, 384);
 }
 function isTokens(v) {
   const t = v;
@@ -9096,265 +9507,42 @@ function deleteTokens(host, env = process.env) {
   }
   const data = readFileStore(env);
   delete data[host];
-  if (Object.keys(data).length === 0) (0, import_node_fs2.rmSync)(hqPaths(env).credentials, { force: true });
+  if (Object.keys(data).length === 0) (0, import_node_fs3.rmSync)(hqPaths(env).credentials, { force: true });
   else writeFileStore(env, data);
 }
 
 // cli/src/version.ts
-var HQ_VERSION = "0.1.0".length > 0 ? "0.1.0" : "0.0.0-dev";
+var HQ_VERSION = "0.2.0".length > 0 ? "0.2.0" : "0.0.0-dev";
 
 // cli/src/api.ts
-var HqApiError = class extends Error {
-  constructor(status2, code, message, details) {
-    super(message);
-    this.status = status2;
-    this.code = code;
-    this.details = details;
-    this.name = "HqApiError";
-  }
-  status;
-  code;
-  details;
+var CLI_CLIENT_HEADERS = {
+  [HQ_HEADER_CLI_VERSION]: HQ_VERSION,
+  [HQ_HEADER_CLIENT]: `hq/${HQ_VERSION}`,
+  [HQ_HEADER_WANT_NONCE]: "1"
 };
-var NotLoggedInError = class extends Error {
-  constructor() {
-    super("hq: you are not logged in on this computer. Run hq login.");
-    this.name = "NotLoggedInError";
-  }
-};
-var REFRESH_MARGIN_MS = 2 * 60 * 1e3;
-var REFRESH_LOCK_STALE_MS = 3e4;
-var REFRESH_LOCK_WAIT_MS = 2e4;
-var realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
-var HqClient = class {
-  host;
-  key;
-  fetchFn;
-  now;
-  store;
-  nonce = null;
-  refreshing = null;
-  lockDir;
+var HqClient2 = class extends HqClient {
   constructor(opts) {
-    this.host = opts.host.replace(/\/+$/, "");
-    this.key = opts.key;
-    this.fetchFn = opts.fetch ?? globalThis.fetch;
-    this.now = opts.now ?? Date.now;
     const env = opts.env ?? process.env;
-    this.store = opts.store ?? {
-      load: (h) => loadTokens(h, env),
-      save: (h, t) => saveTokens(h, t, env)
-    };
-    this.lockDir = opts.lockDir ?? hqPaths(env).home;
-  }
-  /** The lock file's name for THIS host (one login per host, so one lock per host). */
-  refreshLockName() {
-    return `refresh-${(0, import_node_crypto2.createHash)("sha256").update(this.host).digest("hex").slice(0, 12)}.lock`;
-  }
-  isFresh(t) {
-    return Date.parse(t.accessExpiresAt) - this.now() > REFRESH_MARGIN_MS;
-  }
-  tokens() {
-    const t = this.store.load(this.host);
-    if (!t) throw new NotLoggedInError();
-    return t;
-  }
-  /** A live access token, rotated first when it is about to expire. */
-  async accessToken() {
-    return (await this.ensureFresh()).accessToken;
-  }
-  async ensureFresh() {
-    const t = this.tokens();
-    if (this.isFresh(t)) return t;
-    this.refreshing ??= this.refreshAcrossProcesses().finally(() => {
-      this.refreshing = null;
-    });
-    return this.refreshing;
-  }
-  /**
-   * Rotate under the cross-process lock. After taking it, re-read the store: when another process
-   * rotated while we waited, its pair is fresh and we adopt it without touching the server. If the
-   * server still answers `REFRESH_RACE` (a process that raced us WITHOUT the lock, e.g. an older
-   * hq), the pair it stored is adopted the same way.
-   */
-  async refreshAcrossProcesses() {
-    const release = await this.acquireRefreshLock();
-    try {
-      const current = this.tokens();
-      if (this.isFresh(current)) return current;
-      try {
-        return await this.refresh(current);
-      } catch (err) {
-        if (err instanceof HqApiError && err.code === "REFRESH_RACE") {
-          const after = this.tokens();
-          if (after.refreshToken !== current.refreshToken) return after;
-        }
-        throw err;
-      }
-    } finally {
-      release();
-    }
-  }
-  /**
-   * `~/.hq/refresh-<host>.lock`, created with O_EXCL (atomic on every local filesystem). A lock whose
-   * mtime is older than `REFRESH_LOCK_STALE_MS` belongs to a process that died holding it and is
-   * broken; after `REFRESH_LOCK_WAIT_MS` of waiting we break it ourselves rather than hang an editor.
-   * The release removes the file only while it still carries OUR token, so a lock broken and
-   * re-taken by another process is never deleted from under it. Real time, not `now()`: file
-   * mtimes are wall-clock.
-   */
-  async acquireRefreshLock() {
-    (0, import_node_fs3.mkdirSync)(this.lockDir, { recursive: true, mode: 448 });
-    const file = import_node_path2.default.join(this.lockDir, this.refreshLockName());
-    const mine = `${process.pid}:${(0, import_node_crypto2.randomBytes)(8).toString("hex")}`;
-    const deadline = Date.now() + REFRESH_LOCK_WAIT_MS;
-    let delay = 25;
-    for (; ; ) {
-      try {
-        const fd = (0, import_node_fs3.openSync)(file, "wx", 384);
-        try {
-          (0, import_node_fs3.writeSync)(fd, mine);
-        } finally {
-          (0, import_node_fs3.closeSync)(fd);
-        }
-        return () => {
-          try {
-            if ((0, import_node_fs3.readFileSync)(file, "utf8") === mine) (0, import_node_fs3.rmSync)(file, { force: true });
-          } catch {
-          }
-        };
-      } catch (err) {
-        if (err.code !== "EEXIST") throw err;
-      }
-      let age = 0;
-      try {
-        age = Date.now() - (0, import_node_fs3.statSync)(file).mtimeMs;
-      } catch {
-        continue;
-      }
-      if (age > REFRESH_LOCK_STALE_MS || Date.now() > deadline) {
-        (0, import_node_fs3.rmSync)(file, { force: true });
-        continue;
-      }
-      await realSleep(delay);
-      delay = Math.min(delay * 2, 500);
-    }
-  }
-  /** Rotate the pair. Device-signed; the nonce is fetched with the REFRESH token as the bearer. */
-  async refresh(t) {
-    const nonceRes = await this.fetchFn(`${this.host}/api/remote/nonce`, {
-      headers: { Authorization: `Bearer ${t.refreshToken}`, [HQ_HEADER_CLI_VERSION]: HQ_VERSION }
-    });
-    if (!nonceRes.ok) throw await this.toError(nonceRes);
-    const { nonce } = await nonceRes.json();
-    const path4 = "/api/remote/token/refresh";
-    const body = JSON.stringify({ refreshToken: t.refreshToken });
-    const res = await this.fetchFn(`${this.host}${path4}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [HQ_HEADER_CLI_VERSION]: HQ_VERSION,
-        [HQ_HEADER_NONCE]: nonce,
-        [HQ_HEADER_DEVICE_SIG]: signRequest(this.key, nonce, "POST", path4, body)
+    super({
+      host: opts.host,
+      key: opts.key,
+      store: opts.store ?? {
+        load: (h) => loadTokens(h, env),
+        save: (h, t) => saveTokens(h, t, env)
       },
-      body
+      lockDir: opts.lockDir ?? hqPaths(env).home,
+      clientHeaders: { ...CLI_CLIENT_HEADERS },
+      ...opts.fetch ? { fetch: opts.fetch } : {},
+      ...opts.now ? { now: opts.now } : {}
     });
-    if (!res.ok) throw await this.toError(res);
-    const pair = await res.json();
-    const next = {
-      accessToken: pair.accessToken,
-      accessExpiresAt: pair.accessExpiresAt,
-      refreshToken: pair.refreshToken
-    };
-    this.store.save(this.host, next);
-    return next;
-  }
-  /** A fresh single-use nonce (the last response's, or a new one). */
-  async takeNonce() {
-    if (this.nonce) {
-      const n = this.nonce;
-      this.nonce = null;
-      return n;
-    }
-    const res = await this.fetchFn(`${this.host}/api/remote/nonce`, {
-      headers: {
-        Authorization: `Bearer ${await this.accessToken()}`,
-        [HQ_HEADER_CLI_VERSION]: HQ_VERSION
-      }
-    });
-    if (!res.ok) throw await this.toError(res);
-    return (await res.json()).nonce;
-  }
-  /** Headers for a signed WebSocket upgrade (`GET <path>`, empty body). */
-  async upgradeHeaders(path4, org, extra = {}) {
-    const token = await this.accessToken();
-    const nonce = await this.takeNonce();
-    return {
-      Authorization: `Bearer ${token}`,
-      [HQ_HEADER_ORG]: org,
-      [HQ_HEADER_NONCE]: nonce,
-      [HQ_HEADER_DEVICE_SIG]: signRequest(this.key, nonce, "GET", path4, ""),
-      [HQ_HEADER_CLI_VERSION]: HQ_VERSION,
-      ...extra
-    };
-  }
-  async request(method, path4, opts = {}) {
-    const token = await this.accessToken();
-    const body = opts.body === void 0 ? "" : JSON.stringify(opts.body);
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      [HQ_HEADER_CLI_VERSION]: HQ_VERSION
-    };
-    if (opts.body !== void 0) headers["content-type"] = "application/json";
-    if (opts.org) headers[HQ_HEADER_ORG] = opts.org;
-    if (opts.signed) {
-      const nonce = await this.takeNonce();
-      headers[HQ_HEADER_NONCE] = nonce;
-      headers[HQ_HEADER_DEVICE_SIG] = signRequest(this.key, nonce, method, path4, body);
-    }
-    const res = await this.fetchFn(`${this.host}${path4}`, {
-      method,
-      headers,
-      ...opts.body !== void 0 ? { body } : {}
-    });
-    const next = res.headers.get(HQ_HEADER_NONCE);
-    if (next) this.nonce = next;
-    if (!res.ok) throw await this.toError(res);
-    if (res.status === 204) return { status: 204, body: void 0 };
-    return { status: res.status, body: await res.json() };
-  }
-  async toError(res) {
-    let body = {};
-    try {
-      body = await res.json();
-    } catch {
-    }
-    const message = typeof body.error === "string" ? body.error : `HQ answered ${res.status}`;
-    return new HqApiError(
-      res.status,
-      typeof body.code === "string" ? body.code : void 0,
-      message,
-      typeof body.details === "object" && body.details !== null ? body.details : void 0
-    );
   }
 };
-async function postJson(fetchFn, url, body) {
-  const res = await fetchFn(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", [HQ_HEADER_CLI_VERSION]: HQ_VERSION },
-    body: JSON.stringify(body)
-  });
-  let parsed = void 0;
-  try {
-    parsed = await res.json();
-  } catch {
-    parsed = void 0;
-  }
-  return { status: res.status, body: parsed };
+function postJson2(fetchFn, url, body) {
+  return postJson(fetchFn, url, body, { ...CLI_CLIENT_HEADERS });
 }
 
 // cli/src/args.ts
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["config", "wake", "help", "version", "local-echo"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["help", "version", "local-echo"]);
 function parseArgs(argv) {
   const positionals = [];
   const flags = /* @__PURE__ */ new Map();
@@ -9393,6 +9581,33 @@ function flagString(args, name) {
   return typeof v === "string" ? v : void 0;
 }
 
+// shared/src/terminal-queries.ts
+var QUERY_RE = /\x1b\[[>=]?[0-9;]*c|\x1b\](?:10|11);\?(?:\x07|\x1b\\)/g;
+var PARTIAL_TAIL_RE = /\x1b(?:\[[>=]?[0-9;]*|\](?:1(?:[01](?:;(?:\?(?:\x1b)?)?)?)?)?)?$/;
+var MAX_HELD = 24;
+function createTerminalQueryFilter() {
+  let held = "";
+  return {
+    push(chunk) {
+      const text = held + chunk;
+      held = "";
+      const stripped = text.replace(QUERY_RE, "");
+      const tail = PARTIAL_TAIL_RE.exec(stripped);
+      if (tail && tail[0].length <= MAX_HELD) {
+        held = tail[0];
+        return stripped.slice(0, stripped.length - held.length);
+      }
+      return stripped;
+    },
+    /** Whatever is still held (a prefix that never completed): written as is. */
+    flush() {
+      const out = held;
+      held = "";
+      return out;
+    }
+  };
+}
+
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
@@ -9404,12 +9619,686 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
+// hq-client/src/connect.ts
+var ConnectRefusedError = class extends Error {
+  /**
+   * @param apiError the HQ answer behind the sentence, when there was one (the extension maps its
+   *   `code`/`status` to its own copy; the CLI prints `message`).
+   */
+  constructor(message, apiError) {
+    super(message);
+    this.apiError = apiError;
+    this.name = "ConnectRefusedError";
+  }
+  apiError;
+};
+var WAKE_TIMEOUT_MS = 17e4;
+var WAKE_POLL_MS = 2e3;
+function wakeTimeoutMessage(team) {
+  return `hq: team "${team.workspace.name}" did not wake within 3 minutes. Check it in HQ and try again.`;
+}
+function connectionsPath(team, id) {
+  const base = `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}/connections`;
+  return id ? `${base}/${id}` : base;
+}
+function refusalMessage(team, err) {
+  const name = team.workspace.name;
+  if (err instanceof HqApiError) {
+    if (err.code === "RUNNER_UNAVAILABLE" && err.details?.hint === "reconnect") {
+      return `hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
+    }
+    if (err.code === "RUNNER_UNAVAILABLE") {
+      return `hq: team "${name}" has no running machine. Open the team in HQ and start a session to start it.`;
+    }
+    if (err.code === "REMOTE_UNSUPPORTED_RUNNER" && err.details?.reason === "restart_required") {
+      return `hq: team "${name}" must restart its machine before remote access works (remote access was turned on while it was running). An owner or admin can stop and start it from the team page in HQ.`;
+    }
+    if (err.code === "REMOTE_UNSUPPORTED_RUNNER") {
+      return `hq: team "${name}" runs an older machine image without remote access. An owner or admin can update it: HQ \u2192 ${name} \u2192 Settings \u2192 Update machine.`;
+    }
+    if (err.code === "THROTTLED") {
+      return `hq: too many open connections to team "${name}". Close one and try again.`;
+    }
+    if (err.code === "UPGRADE_REQUIRED") return `hq: ${err.message}`;
+    if (err.code === "REMOTE_TOKEN_INVALID")
+      return "hq: your HQ login on this computer expired or was revoked. Run hq login.";
+    if (err.code === "FEATURE_NOT_AVAILABLE")
+      return `hq: remote access is not available for ${team.org.name} yet.`;
+    if (err.status === 403) return `hq: you do not have remote access to team "${name}".`;
+    if (err.status === 404)
+      return `hq: team "${name}" was not found. Run hq status to refresh your teams.`;
+    return `hq: ${err.message}`;
+  }
+  return `hq: ${err.message}`;
+}
+async function openConnection(client, team, req, deps) {
+  let first;
+  try {
+    first = await client.request(
+      "POST",
+      connectionsPath(team),
+      {
+        body: req,
+        org: team.org.slug,
+        signed: true
+      }
+    );
+  } catch (err) {
+    throw new ConnectRefusedError(
+      refusalMessage(team, err),
+      err instanceof HqApiError ? err : void 0
+    );
+  }
+  if (first.body.state === "ready") return first.body;
+  const id = first.body.id;
+  deps.say(
+    first.body.code === "SESSION_RESUME_COLD_RESTART" ? `hq: starting team "${team.workspace.name}" fresh (about 60 s)...` : `hq: waking team "${team.workspace.name}" (about 15 s)...`
+  );
+  const deadline = deps.now() + WAKE_TIMEOUT_MS;
+  while (deps.now() < deadline) {
+    await deps.sleep(WAKE_POLL_MS);
+    let poll;
+    try {
+      poll = await client.request(
+        "GET",
+        connectionsPath(team, id),
+        // Device-signed: the poll mints connect codes (review 2026-09-27).
+        { org: team.org.slug, signed: true }
+      );
+    } catch (err) {
+      throw new ConnectRefusedError(
+        refusalMessage(team, err),
+        err instanceof HqApiError ? err : void 0
+      );
+    }
+    if (poll.body.state === "ready") return poll.body;
+  }
+  await closeConnection(client, team, id);
+  throw new ConnectRefusedError(wakeTimeoutMessage(team));
+}
+async function closeConnection(client, team, id) {
+  try {
+    await client.request("DELETE", connectionsPath(team, id), { org: team.org.slug, signed: true });
+  } catch {
+  }
+}
+
+// hq-client/src/tunnel-client.ts
+var REMOTE_TUNNEL_WS_PATH = "/ws/remote/tunnel";
+var REMOTE_TERMINAL_WS_PATH = "/ws/remote/terminal";
+function wsUrl(host, path3) {
+  return `${host.replace(/^http/, "ws")}${path3}`;
+}
+var TunnelRefusedError = class extends Error {
+  constructor(status2, message) {
+    super(message);
+    this.status = status2;
+    this.name = "TunnelRefusedError";
+  }
+  status;
+};
+function upgradeRefusalMessage(status2) {
+  if (status2 === 401)
+    return "hq: this connection was refused. Your login may have expired: run hq login.";
+  if (status2 === 403) return "hq: remote access to this team is not allowed for you right now.";
+  if (status2 === 404) return "hq: remote access is not available on this HQ.";
+  if (status2 === 409)
+    return "hq: this team machine needs an update before it accepts this connection. An owner or admin can update it in HQ.";
+  if (status2 === 429)
+    return "hq: too many connection attempts right now. Wait a minute and try again.";
+  if (status2 === 501)
+    return "hq: connections to team machines are not switched on for this HQ yet. Ask an owner or admin.";
+  if (status2 === 503) return "hq: HQ is restarting. Try again in a moment.";
+  if (status2 === 504) return "hq: the team machine did not answer in time. Try again in a moment.";
+  return `hq: the team machine could not be reached (HTTP ${status2}).`;
+}
+var defaultWs = (url, headers) => new wrapper_default(url, { headers, perMessageDeflate: false });
+async function openTunnelSocket(client, org, connectCode, factory = defaultWs) {
+  const headers = await client.upgradeHeaders(REMOTE_TUNNEL_WS_PATH, org, {
+    [HQ_HEADER_CONNECT_CODE]: connectCode
+  });
+  const ws = factory(wsUrl(client.host, REMOTE_TUNNEL_WS_PATH), headers);
+  ws.binaryType = "nodebuffer";
+  return new Promise((resolve, reject) => {
+    ws.once("open", () => {
+      ws.pause();
+      resolve(ws);
+    });
+    ws.once("unexpected-response", (_req, res) => {
+      const status2 = res.statusCode ?? 0;
+      res.resume();
+      ws.terminate();
+      reject(new TunnelRefusedError(status2, upgradeRefusalMessage(status2)));
+    });
+    ws.once(
+      "error",
+      (err) => reject(new TunnelRefusedError(0, `hq: could not reach HQ (${err.message}).`))
+    );
+  });
+}
+function closeTunnel(ws, code = 1e3) {
+  if (ws.readyState !== wrapper_default.OPEN) return;
+  ws.resume();
+  ws.close(code);
+}
+function pipeTunnel(ws, input, output, highWater = 1 << 20) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (code) => {
+      if (done) return;
+      done = true;
+      input.off("data", onData);
+      input.off("end", onEnd);
+      clearInterval(drainTimer);
+      resolve(code);
+    };
+    const onLocalError = () => {
+      if (ws.readyState === wrapper_default.OPEN || ws.readyState === wrapper_default.CONNECTING)
+        ws.close(1e3);
+      finish(1e3);
+    };
+    input.on("error", onLocalError);
+    if (output !== input) output.on("error", onLocalError);
+    const onData = (chunk) => {
+      if (ws.readyState !== wrapper_default.OPEN) return;
+      ws.send(chunk, { binary: true });
+      if (ws.bufferedAmount > highWater) input.pause();
+    };
+    const onEnd = () => {
+      if (ws.readyState === wrapper_default.OPEN) ws.close(1e3);
+    };
+    const drainTimer = setInterval(() => {
+      if (input.isPaused() && ws.bufferedAmount <= highWater / 2) input.resume();
+    }, 50);
+    drainTimer.unref?.();
+    input.on("data", onData);
+    input.on("end", onEnd);
+    ws.on("message", (data, isBinary) => {
+      if (!isBinary) return;
+      if (output.destroyed || output.writableEnded) return;
+      if (!output.write(data)) {
+        ws.pause();
+        output.once("drain", () => ws.resume());
+      }
+    });
+    ws.on("close", (code) => finish(code));
+    ws.on("error", () => finish(1006));
+    ws.resume();
+  });
+}
+
+// hq-client/src/attach-session.ts
+var TOKEN_CHECK_MS = 6e4;
+var PRESENCE_MS = 6e4;
+var WAKE_RETRY_MS = 2e3;
+var WAKE_RETRY_MAX_MS = 4e3;
+var WAKE_STILL_ON_IT_MS = 2e4;
+var HISTORY_NOTICE_GRACE_MS = 8e3;
+var HISTORY_UNAVAILABLE_NOTICE = "history_unavailable";
+var WORKSPACE_ASLEEP_NOTICE = "workspace_asleep";
+var RECONNECT_BASE_MS = 1e3;
+var RECONNECT_MAX_MS = 1e4;
+var MAX_RECONNECTS = 8;
+var RTT_PING_MS = 3e4;
+var RTT_BURST_MS = [500, 1e3, 1500];
+var TERMINAL_ERROR_CODES = /* @__PURE__ */ new Set(["NOT_FOUND", "SESSION_STOPPED", "FORBIDDEN"]);
+var ERROR_RETRY_MS = 2e3;
+var ERROR_RETRY_MAX_MS = 1e4;
+var WAKE_CODES = /* @__PURE__ */ new Set([
+  "SESSION_STARTING",
+  "SESSION_RESUMING",
+  "SESSION_RESUME_RETRYING",
+  "SESSION_RESUME_COLD_RESTART"
+]);
+var CLI_ATTACH_COPY = {
+  prefix: "hq: ",
+  stillOnIt: "hq: Still on it...",
+  wakeTimeout: wakeTimeoutMessage,
+  reconnecting: "hq: connection lost, reconnecting...",
+  accessEnded: "hq: your access to this session ended.",
+  detached: "hq: detached.",
+  nowViewOnly: "hq: you can watch this session but not type in it."
+};
+var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+function cleanPorts(value) {
+  if (!Array.isArray(value)) return null;
+  const ports = value.filter(
+    (p) => typeof p === "number" && Number.isInteger(p) && p >= 1 && p <= 65535
+  );
+  return ports.slice(0, 64);
+}
+function createAttachSession(client, target, sink, opts = {}) {
+  const { team, session } = target;
+  const copy = { ...CLI_ATTACH_COPY, ...opts.copy ?? {} };
+  const make = opts.wsFactory ?? ((url, h) => new wrapper_default(url, { headers: h }));
+  const reconnectBase = opts.reconnectBaseMs ?? RECONNECT_BASE_MS;
+  const echo = opts.echo ?? null;
+  const wake2 = { since: null, said: null, cold: false, stillSaid: false, asleep: false };
+  let canType = session.canType;
+  let current = null;
+  let detachRequested = false;
+  const detachHooks = /* @__PURE__ */ new Set();
+  const setCanType = (next) => {
+    if (next === canType) return;
+    canType = next;
+    opts.onCanTypeChanged?.(next);
+  };
+  async function run2() {
+    let announced = false;
+    let intent = opts.initialIntent ?? "open";
+    let reconnects = 0;
+    for (; ; ) {
+      if (detachRequested) return { kind: "ended", exitCode: 0, message: `\r
+${copy.detached}` };
+      const headers = await client.upgradeHeaders(REMOTE_TERMINAL_WS_PATH, team.org.slug);
+      const ws = make(wsUrl(client.host, REMOTE_TERMINAL_WS_PATH), headers);
+      current = ws;
+      const opened = await new Promise((resolve) => {
+        ws.once("open", () => resolve(null));
+        ws.once("unexpected-response", (_req, res) => {
+          const status2 = res.statusCode ?? 0;
+          res.resume();
+          ws.terminate();
+          resolve(status2);
+        });
+        ws.once("error", () => resolve(0));
+      });
+      if (opened !== null) {
+        if ((reconnects > 0 || announced) && intent === "reconnect" && (opened === 0 || opened === 503) && reconnects < MAX_RECONNECTS) {
+          await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
+          reconnects += 1;
+          continue;
+        }
+        return { kind: "refused", status: opened };
+      }
+      if (!announced) {
+        announced = true;
+        opts.onFirstOpen?.();
+      }
+      const end = await runSocket(
+        ws,
+        () => {
+          reconnects = 0;
+        },
+        intent,
+        headers
+      );
+      if (end.kind === "dropped" && reconnects < MAX_RECONNECTS) {
+        sink.say(`\r
+${copy.reconnecting}`);
+        await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
+        reconnects += 1;
+        intent = "reconnect";
+        continue;
+      }
+      if (end.kind === "dropped") return { kind: "lost" };
+      return end;
+    }
+  }
+  function runSocket(ws, onAdmitted, intent, headers) {
+    echo?.lifecycleReset();
+    const say = (line) => {
+      echo?.undrawNow();
+      sink.say(line);
+    };
+    let lastToken = (headers.Authorization ?? "").slice("Bearer ".length);
+    const send = (frame) => {
+      if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify(frame));
+    };
+    const size = () => sink.size();
+    let answerWaking = false;
+    let answerAsleep = false;
+    let attachOutstanding = false;
+    const attachFrame = (i) => {
+      answerWaking = false;
+      answerAsleep = false;
+      attachOutstanding = true;
+      send({ type: "attach", sessionId: session.id, ...size(), intent: i });
+    };
+    attachFrame(intent);
+    const filter = (opts.createFilter ?? createTerminalQueryFilter)();
+    return new Promise((resolve) => {
+      let exitCode = 0;
+      let errorMessage = null;
+      let userDetached = false;
+      let wakeTimer = null;
+      let wakeAttempts = 0;
+      let stillTimer = null;
+      let giveUpTimer = null;
+      let errorRetryTimer = null;
+      let errorRetries = 0;
+      let errorSaid = null;
+      let repaintedAt = 0;
+      const schedulePoll = () => {
+        if (wakeTimer !== null) return;
+        const base = opts.wakeRetryMs ?? WAKE_RETRY_MS;
+        const delay = wakeAttempts === 0 ? base : Math.max(base, Math.min(WAKE_RETRY_MAX_MS, base * 2));
+        wakeAttempts += 1;
+        wakeTimer = setTimeout(() => {
+          wakeTimer = null;
+          attachFrame("reconnect");
+        }, delay);
+      };
+      const scheduleErrorRetry = () => {
+        if (errorRetryTimer !== null) return;
+        const base = opts.errorRetryMs ?? ERROR_RETRY_MS;
+        const delay = Math.min(ERROR_RETRY_MAX_MS, base * 2 ** Math.min(errorRetries, 8));
+        errorRetries += 1;
+        errorRetryTimer = setTimeout(() => {
+          errorRetryTimer = null;
+          if (!attachOutstanding) attachFrame("reconnect");
+        }, delay);
+      };
+      const clearWakeTimers = () => {
+        if (wakeTimer) clearTimeout(wakeTimer);
+        if (stillTimer) clearTimeout(stillTimer);
+        if (giveUpTimer) clearTimeout(giveUpTimer);
+        wakeTimer = stillTimer = giveUpTimer = null;
+      };
+      const armWakeClocks = (since) => {
+        const now = Date.now();
+        if (stillTimer === null && !wake2.stillSaid) {
+          stillTimer = setTimeout(
+            () => {
+              if (wake2.since === null || wake2.cold || wake2.stillSaid) return;
+              wake2.stillSaid = true;
+              say(`\r
+${copy.stillOnIt}`);
+            },
+            Math.max(0, since + (opts.wakeStillMs ?? WAKE_STILL_ON_IT_MS) - now)
+          );
+        }
+        if (giveUpTimer === null) {
+          giveUpTimer = setTimeout(
+            () => {
+              say(`\r
+${copy.wakeTimeout(team)}`);
+              errorMessage = "";
+              exitCode = 1;
+              ws.terminate();
+            },
+            Math.max(0, since + (opts.wakeTimeoutMs ?? WAKE_TIMEOUT_MS) - now)
+          );
+        }
+      };
+      const clearWake = () => {
+        if (wake2.since !== null) opts.onWaking?.(false);
+        wake2.since = null;
+        wake2.said = null;
+        wake2.cold = false;
+        wake2.stillSaid = false;
+        wakeAttempts = 0;
+        clearWakeTimers();
+      };
+      const endWake = () => {
+        if (wake2.since === null) return;
+        clearWake();
+        wake2.asleep = false;
+        attachFrame("open");
+      };
+      if (wake2.since !== null) armWakeClocks(wake2.since);
+      const tokenTimer = setInterval(() => {
+        void client.accessToken().then((t) => {
+          if (t !== lastToken) {
+            lastToken = t;
+            send({ type: "remote-token", token: t });
+          }
+        }).catch(() => void 0);
+      }, TOKEN_CHECK_MS);
+      const presenceTimer = setInterval(() => {
+        if (opts.presenceWhen && !opts.presenceWhen()) return;
+        send({ type: "presence", sessionId: session.id });
+      }, opts.presenceIntervalMs ?? PRESENCE_MS);
+      presenceTimer.unref?.();
+      tokenTimer.unref?.();
+      const rttTimers = [];
+      if (echo) {
+        const ping = () => {
+          if (ws.readyState !== wrapper_default.OPEN) return;
+          try {
+            ws.ping(String(Date.now()));
+          } catch {
+          }
+        };
+        ws.on("pong", (payload) => {
+          const sentAt = Number(payload.toString("utf8"));
+          if (Number.isFinite(sentAt)) echo.rttSample(Date.now() - sentAt);
+        });
+        ping();
+        for (const ms of RTT_BURST_MS) rttTimers.push(setTimeout(ping, ms));
+        rttTimers.push(setInterval(ping, RTT_PING_MS));
+        for (const tm of rttTimers) tm.unref?.();
+      }
+      let livenessTimer = null;
+      let lastPongAt = Date.now();
+      if (opts.livenessPingMs !== void 0) {
+        const timeout = opts.livenessTimeoutMs ?? 1e4;
+        ws.on("pong", () => {
+          lastPongAt = Date.now();
+        });
+        let pingSentAt = 0;
+        livenessTimer = setInterval(
+          () => {
+            if (ws.readyState !== wrapper_default.OPEN) return;
+            if (pingSentAt > lastPongAt && Date.now() - pingSentAt > timeout) {
+              ws.terminate();
+              return;
+            }
+            if (pingSentAt <= lastPongAt) {
+              pingSentAt = Date.now();
+              try {
+                ws.ping();
+              } catch {
+              }
+            }
+          },
+          Math.min(opts.livenessPingMs, timeout)
+        );
+        livenessTimer.unref?.();
+      }
+      const onResize = () => {
+        echo?.resize(size().cols, size().rows);
+        send({ type: "resize", sessionId: session.id, ...size() });
+      };
+      const detachNow = () => {
+        echo?.close();
+        userDetached = true;
+        send({ type: "detach", sessionId: session.id });
+        ws.close(1e3);
+      };
+      const onData = (chunk) => {
+        const i = opts.detachByte === null || opts.detachByte === void 0 ? -1 : chunk.indexOf(opts.detachByte);
+        const before = i >= 0 ? chunk.subarray(0, i) : chunk;
+        if (before.length > 0 && wake2.asleep) {
+          wake2.asleep = false;
+          attachFrame("open");
+        }
+        if (canType && before.length > 0) {
+          const data = before.toString("utf8");
+          echo?.key(data);
+          send({ type: "input", sessionId: session.id, data });
+        }
+        if (i >= 0) detachNow();
+      };
+      detachHooks.add(detachNow);
+      const offResize = sink.onResize(onResize);
+      const offInput = sink.onInput(onData);
+      ws.on("message", (data) => {
+        let frame;
+        try {
+          frame = JSON.parse(data.toString("utf8"));
+        } catch {
+          return;
+        }
+        if (frame.sessionId !== void 0 && frame.sessionId !== null && frame.sessionId !== session.id)
+          return;
+        if ((frame.type === "output" || frame.type === "history") && "data" in frame) {
+          if (frame.type === "history") repaintedAt = Date.now();
+          wake2.asleep = false;
+          const clean = filter.push(frame.data);
+          if (clean.length > 0) {
+            if (!echo) sink.write(clean);
+            else if (frame.type === "history") echo.repaint(clean);
+            else echo.output(clean);
+          }
+        } else if (frame.type === "reset") {
+          repaintedAt = Date.now();
+          if (echo) echo.repaint("\x1B[H\x1B[2J\x1B[3J");
+          else sink.write("\x1B[H\x1B[2J\x1B[3J");
+        } else if (frame.type === "attached") {
+          attachOutstanding = false;
+          onAdmitted();
+          if (!answerWaking && !answerAsleep) {
+            errorRetries = 0;
+            errorSaid = null;
+          }
+          if (answerWaking) {
+            schedulePoll();
+            return;
+          }
+          if (answerAsleep) {
+            if (wake2.since !== null) clearWake();
+            return;
+          }
+          endWake();
+        } else if (frame.type === "runner-metrics" && "listenPorts" in frame) {
+          const ports = cleanPorts(frame.listenPorts);
+          if (ports !== null) opts.onListenPorts?.(ports);
+        } else if (frame.type === "error" && "message" in frame) {
+          const code = "code" in frame ? frame.code : "";
+          if (WAKE_CODES.has(code)) {
+            answerWaking = true;
+            wake2.asleep = false;
+            wake2.cold = code === "SESSION_RESUME_COLD_RESTART";
+            if (wake2.since === null) {
+              wake2.since = Date.now();
+              opts.onWaking?.(true);
+            }
+            armWakeClocks(wake2.since);
+            if (wake2.said !== frame.message) {
+              wake2.said = frame.message;
+              say(
+                `\r
+${opts.wakeText ? opts.wakeText(code, frame.message) : `${copy.prefix}${frame.message}`}`
+              );
+            }
+            if (!attachOutstanding) schedulePoll();
+            return;
+          }
+          if (code === "FORBIDDEN" && opts.onForbidden === "view-only") {
+            if (canType) {
+              setCanType(false);
+              say(`\r
+${copy.nowViewOnly}`);
+            }
+            return;
+          }
+          if (!TERMINAL_ERROR_CODES.has(code)) {
+            attachOutstanding = false;
+            const quiet = code === "RUNNER_UNAVAILABLE" && (wake2.since !== null || wake2.asleep);
+            if (!quiet && errorSaid !== frame.message) {
+              errorSaid = frame.message;
+              say(`\r
+${copy.prefix}${frame.message}`);
+            }
+            scheduleErrorRetry();
+            return;
+          }
+          errorMessage = `\r
+${copy.prefix}${frame.message}`;
+          exitCode = 1;
+          ws.close(1e3);
+        } else if (frame.type === "notice" && "text" in frame) {
+          const code = "code" in frame ? frame.code : void 0;
+          if (code === HISTORY_UNAVAILABLE_NOTICE && (wake2.since !== null || wake2.asleep || Date.now() - repaintedAt < HISTORY_NOTICE_GRACE_MS))
+            return;
+          if (code === WORKSPACE_ASLEEP_NOTICE) {
+            wake2.asleep = true;
+            answerAsleep = true;
+          }
+          say(
+            `\r
+${opts.noticeText ? opts.noticeText(code, frame.text) : `${copy.prefix}${frame.text}`}`
+          );
+        }
+      });
+      ws.on("error", () => void 0);
+      ws.on("close", (code) => {
+        detachHooks.delete(detachNow);
+        for (const tm of rttTimers) clearTimeout(tm);
+        if (livenessTimer) clearInterval(livenessTimer);
+        clearInterval(tokenTimer);
+        clearInterval(presenceTimer);
+        clearWakeTimers();
+        if (errorRetryTimer) clearTimeout(errorRetryTimer);
+        offInput();
+        offResize();
+        const held = filter.flush();
+        if (held.length > 0 && !userDetached) {
+          if (echo) echo.output(held);
+          else sink.write(held);
+        }
+        echo?.undrawNow();
+        if (!userDetached && exitCode === 0 && (code === 1006 || code === 1001)) {
+          resolve({ kind: "dropped" });
+          return;
+        }
+        if (code === 4401) {
+          resolve({
+            kind: "ended",
+            exitCode: 1,
+            message: `\r
+${copy.accessEnded}`,
+            unauthorized: true
+          });
+          return;
+        }
+        if (errorMessage !== null) {
+          if (errorMessage.length > 0) say(errorMessage);
+          resolve({ kind: "ended", exitCode, message: null });
+          return;
+        }
+        resolve({ kind: "ended", exitCode, message: `\r
+${copy.detached}` });
+      });
+    });
+  }
+  return {
+    run: run2,
+    detach: () => {
+      detachRequested = true;
+      for (const hook of [...detachHooks]) hook();
+      if (detachHooks.size === 0 && current && current.readyState === wrapper_default.CONNECTING) {
+        current.terminate();
+      }
+    },
+    canType: () => canType
+  };
+}
+
 // cli/src/context.ts
 var import_node_child_process2 = require("node:child_process");
 var import_node_os2 = __toESM(require("node:os"), 1);
 
-// cli/src/state.ts
+// cli/src/device-key.ts
 var import_node_fs4 = require("node:fs");
+function ensureDeviceKey(env = process.env, comment = "hq") {
+  const paths = hqPaths(env);
+  if ((0, import_node_fs4.existsSync)(paths.privateKey)) return loadDeviceKey(env);
+  (0, import_node_fs4.mkdirSync)(paths.keysDir, { recursive: true, mode: 448 });
+  (0, import_node_fs4.chmodSync)(paths.home, 448);
+  const { seed32, pub32 } = generateDeviceKeyMaterial();
+  (0, import_node_fs4.writeFileSync)(paths.privateKey, toOpenSshPrivateKey(seed32, pub32, comment), { mode: 384 });
+  (0, import_node_fs4.writeFileSync)(paths.publicKey, `${publicLineOf(pub32)} ${comment}
+`, { mode: 420 });
+  return { publicLine: publicLineOf(pub32), privateKey: keyObjectFromSeed(seed32, pub32) };
+}
+function loadDeviceKey(env = process.env) {
+  return deviceKeyFromOpenSsh((0, import_node_fs4.readFileSync)(hqPaths(env).privateKey, "utf8"));
+}
+
+// cli/src/state.ts
+var import_node_fs5 = require("node:fs");
 var DEFAULT_HOST = "https://hq.aiworkforceone.com";
 var LOOPBACK_HOST = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 function normalizeHost(host) {
@@ -9426,9 +10315,9 @@ function normalizeHost(host) {
 function readState(env = process.env) {
   const p = hqPaths(env).state;
   const fallbackHost = env.HQ_HOST ? normalizeHost(env.HQ_HOST) : DEFAULT_HOST;
-  if (!(0, import_node_fs4.existsSync)(p)) return { host: fallbackHost };
+  if (!(0, import_node_fs5.existsSync)(p)) return { host: fallbackHost };
   try {
-    const parsed = JSON.parse((0, import_node_fs4.readFileSync)(p, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs5.readFileSync)(p, "utf8"));
     return { ...parsed, host: env.HQ_HOST ? fallbackHost : parsed.host ?? fallbackHost };
   } catch {
     return { host: fallbackHost };
@@ -9436,12 +10325,12 @@ function readState(env = process.env) {
 }
 function writeState(state, env = process.env) {
   const paths = hqPaths(env);
-  (0, import_node_fs4.mkdirSync)(paths.home, { recursive: true, mode: 448 });
-  (0, import_node_fs4.writeFileSync)(paths.state, `${JSON.stringify(state, null, 2)}
+  (0, import_node_fs5.mkdirSync)(paths.home, { recursive: true, mode: 448 });
+  (0, import_node_fs5.writeFileSync)(paths.state, `${JSON.stringify(state, null, 2)}
 `, { mode: 384 });
 }
 
-// cli/src/safe-text.ts
+// hq-client/src/safe-text.ts
 var CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu;
 var CONTROLS_KEEP_LINES = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/gu;
 function oneLine(value) {
@@ -9486,7 +10375,7 @@ function clientFor(ctx, state = readState(ctx.env)) {
   } catch {
     key = ensureDeviceKey(ctx.env);
   }
-  return new HqClient({
+  return new HqClient2({
     host: state.host,
     key: key.privateKey,
     env: ctx.env,
@@ -9495,7 +10384,7 @@ function clientFor(ctx, state = readState(ctx.env)) {
   });
 }
 
-// cli/src/teams.ts
+// hq-client/src/teams.ts
 function isWellFormedTeam(t) {
   return ORG_SLUG_RE.test(t.org.slug) && UUID_RE.test(t.workspace.id) && ALIAS_RE.test(t.alias);
 }
@@ -9550,35 +10439,8 @@ function resolveTeam(orgs, ref, org) {
   );
 }
 
-// shared/src/terminal-queries.ts
-var QUERY_RE = /\x1b\[[>=]?[0-9;]*c|\x1b\](?:10|11);\?(?:\x07|\x1b\\)/g;
-var PARTIAL_TAIL_RE = /\x1b(?:\[[>=]?[0-9;]*|\](?:1(?:[01](?:;(?:\?(?:\x1b)?)?)?)?)?)?$/;
-var MAX_HELD = 24;
-function createTerminalQueryFilter() {
-  let held = "";
-  return {
-    push(chunk) {
-      const text = held + chunk;
-      held = "";
-      const stripped = text.replace(QUERY_RE, "");
-      const tail = PARTIAL_TAIL_RE.exec(stripped);
-      if (tail && tail[0].length <= MAX_HELD) {
-        held = tail[0];
-        return stripped.slice(0, stripped.length - held.length);
-      }
-      return stripped;
-    },
-    /** Whatever is still held (a prefix that never completed): written as is. */
-    flush() {
-      const out = held;
-      held = "";
-      return out;
-    }
-  };
-}
-
 // shared/src/repl-markers.ts
-var MAIN_PROMPT_FOOTER = /\?\s*for\s*shortcuts|bypass\s*permissions\s*on|accept\s*edits\s*on|plan\s*mode\s*on|auto\s*mode\s*on(?![a-z])/i;
+var MAIN_PROMPT_FOOTER = /\?\s*for\s*shortcuts|bypass\s*permissions\s*on|accept\s*edits\s*on|plan\s*mode\s*on|auto\s*mode\s*on(?![a-z])|manual\s*mode\s*on(?![a-z])/i;
 var ESC_TO_INTERRUPT = /esc\s*to\s*interrupt/i;
 var KNOWN_DIALOGS = [
   {
@@ -10019,7 +10881,7 @@ var PredictionEngine = class {
   }
 };
 
-// cli/src/local-echo/ansi-renderer.ts
+// hq-client/src/local-echo/ansi-renderer.ts
 var SGR_PREDICTED = "\x1B[2;4m";
 var SGR_RESET = "\x1B[0m";
 var AnsiRenderer = class {
@@ -10079,7 +10941,7 @@ var AnsiRenderer = class {
   }
 };
 
-// cli/src/local-echo/headless-mirror.ts
+// hq-client/src/local-echo/headless-mirror.ts
 var MIRROR_SCROLLBACK = 200;
 var HeadlessMirror = class _HeadlessMirror {
   constructor(term) {
@@ -10119,7 +10981,7 @@ var HeadlessMirror = class _HeadlessMirror {
   }
 };
 
-// cli/src/local-echo/engine-adapter.ts
+// hq-client/src/local-echo/engine-adapter.ts
 var RTT_SAMPLES = 5;
 var LocalEchoSession = class _LocalEchoSession {
   constructor(mirror, opts) {
@@ -10342,246 +11204,9 @@ var LocalEchoSession = class _LocalEchoSession {
   }
 };
 
-// cli/src/connect.ts
-var ConnectRefusedError = class extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "ConnectRefusedError";
-  }
-};
-var WAKE_TIMEOUT_MS = 17e4;
-var WAKE_POLL_MS = 2e3;
-function wakeTimeoutMessage(team) {
-  return `hq: team "${team.workspace.name}" did not wake within 3 minutes. Check it in HQ and try again.`;
-}
-function connectionsPath(team, id) {
-  const base = `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}/connections`;
-  return id ? `${base}/${id}` : base;
-}
-function refusalMessage(team, err) {
-  const name = team.workspace.name;
-  if (err instanceof HqApiError) {
-    if (err.code === "RUNNER_UNAVAILABLE" && err.details?.hint === "reconnect") {
-      return `hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
-    }
-    if (err.code === "RUNNER_UNAVAILABLE") {
-      return `hq: team "${name}" has no running machine. Open the team in HQ and start a session to start it.`;
-    }
-    if (err.code === "REMOTE_UNSUPPORTED_RUNNER" && err.details?.reason === "restart_required") {
-      return `hq: team "${name}" must restart its machine before SSH works (remote access was turned on while it was running). An owner or admin can stop and start it from the team page in HQ.`;
-    }
-    if (err.code === "REMOTE_UNSUPPORTED_RUNNER") {
-      return `hq: team "${name}" runs an older machine image without SSH access. An owner or admin can update it: HQ \u2192 ${name} \u2192 Settings \u2192 Update machine.`;
-    }
-    if (err.code === "THROTTLED") {
-      return `hq: too many open connections to team "${name}". Close one and try again.`;
-    }
-    if (err.code === "UPGRADE_REQUIRED") return `hq: ${err.message}`;
-    if (err.code === "REMOTE_TOKEN_INVALID")
-      return "hq: your HQ login on this computer expired or was revoked. Run hq login.";
-    if (err.code === "FEATURE_NOT_AVAILABLE")
-      return `hq: remote access is not available for ${team.org.name} yet.`;
-    if (err.status === 403) return `hq: you do not have remote access to team "${name}".`;
-    if (err.status === 404)
-      return `hq: team "${name}" was not found. Run hq ssh --config to refresh your teams.`;
-    return `hq: ${err.message}`;
-  }
-  return `hq: ${err.message}`;
-}
-async function openConnection(client, team, req, deps) {
-  let first;
-  try {
-    first = await client.request(
-      "POST",
-      connectionsPath(team),
-      {
-        body: req,
-        org: team.org.slug,
-        signed: true
-      }
-    );
-  } catch (err) {
-    throw new ConnectRefusedError(refusalMessage(team, err));
-  }
-  if (first.body.state === "ready") return first.body;
-  const id = first.body.id;
-  deps.say(
-    first.body.code === "SESSION_RESUME_COLD_RESTART" ? `hq: starting team "${team.workspace.name}" fresh (about 60 s)...` : `hq: waking team "${team.workspace.name}" (about 15 s)...`
-  );
-  const deadline = deps.now() + WAKE_TIMEOUT_MS;
-  while (deps.now() < deadline) {
-    await deps.sleep(WAKE_POLL_MS);
-    let poll;
-    try {
-      poll = await client.request(
-        "GET",
-        connectionsPath(team, id),
-        // Device-signed: the poll mints connect codes (review 2026-09-27).
-        { org: team.org.slug, signed: true }
-      );
-    } catch (err) {
-      throw new ConnectRefusedError(refusalMessage(team, err));
-    }
-    if (poll.body.state === "ready") return poll.body;
-  }
-  await closeConnection(client, team, id);
-  throw new ConnectRefusedError(wakeTimeoutMessage(team));
-}
-async function closeConnection(client, team, id) {
-  try {
-    await client.request("DELETE", connectionsPath(team, id), { org: team.org.slug, signed: true });
-  } catch {
-  }
-}
-
-// cli/src/tunnel-client.ts
-var REMOTE_TUNNEL_WS_PATH = "/ws/remote/tunnel";
-var REMOTE_TERMINAL_WS_PATH = "/ws/remote/terminal";
-function wsUrl(host, path4) {
-  return `${host.replace(/^http/, "ws")}${path4}`;
-}
-var TunnelRefusedError = class extends Error {
-  constructor(status2, message) {
-    super(message);
-    this.status = status2;
-    this.name = "TunnelRefusedError";
-  }
-  status;
-};
-function upgradeRefusalMessage(status2) {
-  if (status2 === 401)
-    return "hq: this connection was refused. Your login may have expired: run hq login.";
-  if (status2 === 403) return "hq: remote access to this team is not allowed for you right now.";
-  if (status2 === 404) return "hq: remote access is not available on this HQ.";
-  if (status2 === 409)
-    return "hq: this team machine needs an update before it accepts SSH. An owner or admin can update it in HQ.";
-  if (status2 === 429)
-    return "hq: too many connection attempts right now. Wait a minute and try again.";
-  if (status2 === 501)
-    return "hq: connections to team machines are not switched on for this HQ yet. Ask an owner or admin.";
-  if (status2 === 503) return "hq: HQ is restarting. Try again in a moment.";
-  if (status2 === 504) return "hq: the team machine did not answer in time. Try again in a moment.";
-  return `hq: the team machine could not be reached (HTTP ${status2}).`;
-}
-function closeMessage(code) {
-  switch (code) {
-    case 1e3:
-    case 1001:
-    case 1005:
-      return null;
-    case REMOTE_CLOSE_UNAUTHORIZED:
-      return "hq: your access to this team ended (revoked, expired, or remote access was turned off).";
-    case REMOTE_CLOSE_SSH_KEY_REFUSED:
-      return "hq: the team machine refused this computer's key. Run hq login again.";
-    case REMOTE_CLOSE_SSH_CONN_REVOKED:
-      return "hq: this connection was closed from HQ.";
-    case REMOTE_CLOSE_SSH_IDLE_SLEEP:
-      return "hq: the team machine went to sleep.";
-    case REMOTE_CLOSE_SSH_LIFETIME:
-      return "hq: connections end after 12 hours. Connect again to continue.";
-    case REMOTE_CLOSE_RUNNER_UNAVAILABLE:
-      return "hq: the team machine is not available right now.";
-    default:
-      return `hq: the connection closed (${code}).`;
-  }
-}
-var defaultWs = (url, headers) => new wrapper_default(url, { headers, perMessageDeflate: false });
-async function openTunnelSocket(client, org, connectCode, factory = defaultWs) {
-  const headers = await client.upgradeHeaders(REMOTE_TUNNEL_WS_PATH, org, {
-    [HQ_HEADER_CONNECT_CODE]: connectCode
-  });
-  const ws = factory(wsUrl(client.host, REMOTE_TUNNEL_WS_PATH), headers);
-  ws.binaryType = "nodebuffer";
-  return new Promise((resolve, reject) => {
-    ws.once("open", () => {
-      ws.pause();
-      resolve(ws);
-    });
-    ws.once("unexpected-response", (_req, res) => {
-      const status2 = res.statusCode ?? 0;
-      res.resume();
-      ws.terminate();
-      reject(new TunnelRefusedError(status2, upgradeRefusalMessage(status2)));
-    });
-    ws.once(
-      "error",
-      (err) => reject(new TunnelRefusedError(0, `hq: could not reach HQ (${err.message}).`))
-    );
-  });
-}
-function closeTunnel(ws, code = 1e3) {
-  if (ws.readyState !== wrapper_default.OPEN) return;
-  ws.resume();
-  ws.close(code);
-}
-function pipeTunnel(ws, input, output, highWater = 1 << 20) {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (code) => {
-      if (done) return;
-      done = true;
-      input.off("data", onData);
-      input.off("end", onEnd);
-      clearInterval(drainTimer);
-      resolve(code);
-    };
-    const onLocalError = () => {
-      if (ws.readyState === wrapper_default.OPEN || ws.readyState === wrapper_default.CONNECTING)
-        ws.close(1e3);
-      finish(1e3);
-    };
-    input.on("error", onLocalError);
-    if (output !== input) output.on("error", onLocalError);
-    const onData = (chunk) => {
-      if (ws.readyState !== wrapper_default.OPEN) return;
-      ws.send(chunk, { binary: true });
-      if (ws.bufferedAmount > highWater) input.pause();
-    };
-    const onEnd = () => {
-      if (ws.readyState === wrapper_default.OPEN) ws.close(1e3);
-    };
-    const drainTimer = setInterval(() => {
-      if (input.isPaused() && ws.bufferedAmount <= highWater / 2) input.resume();
-    }, 50);
-    drainTimer.unref?.();
-    input.on("data", onData);
-    input.on("end", onEnd);
-    ws.on("message", (data, isBinary) => {
-      if (!isBinary) return;
-      if (output.destroyed || output.writableEnded) return;
-      if (!output.write(data)) {
-        ws.pause();
-        output.once("drain", () => ws.resume());
-      }
-    });
-    ws.on("close", (code) => finish(code));
-    ws.on("error", () => finish(1006));
-    ws.resume();
-  });
-}
-
 // cli/src/commands/attach.ts
 var DETACH_BYTE = 29;
-var TOKEN_CHECK_MS = 6e4;
-var PRESENCE_MS = 6e4;
-var WAKE_RETRY_MS = 2e3;
-var WAKE_RETRY_MAX_MS = 4e3;
-var WAKE_STILL_ON_IT_MS = 2e4;
-var HISTORY_NOTICE_GRACE_MS = 8e3;
-var HISTORY_UNAVAILABLE_NOTICE = "history_unavailable";
-var WORKSPACE_ASLEEP_NOTICE = "workspace_asleep";
-var RECONNECT_BASE_MS = 1e3;
-var RECONNECT_MAX_MS = 1e4;
-var MAX_RECONNECTS = 8;
-var RTT_PING_MS = 3e4;
-var RTT_BURST_MS = [500, 1e3, 1500];
 var LOCAL_ECHO_UNAVAILABLE = "hq: local echo is not available on this HQ yet.";
-var WAKE_CODES = /* @__PURE__ */ new Set([
-  "SESSION_STARTING",
-  "SESSION_RESUMING",
-  "SESSION_RESUME_RETRYING",
-  "SESSION_RESUME_COLD_RESTART"
-]);
 async function findSession(client, orgs, ref, org, teamRef) {
   const needle = ref.trim().toLowerCase();
   const teams = withTeamAliases(orgs).filter(
@@ -10606,7 +11231,6 @@ async function findSession(client, orgs, ref, org, teamRef) {
   }
   return hits;
 }
-var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function attach(ctx, opts, io) {
   const state = readState(ctx.env);
   const client = clientFor(ctx, state);
@@ -10626,14 +11250,8 @@ async function attach(ctx, opts, io) {
     return 1;
   }
   const { team, session } = hits[0];
-  const make = io.wsFactory ?? ((url, h) => new wrapper_default(url, { headers: h }));
   const raw = io.stdin.isTTY === true && typeof io.stdin.setRawMode === "function";
-  const reconnectBase = io.reconnectBaseMs ?? RECONNECT_BASE_MS;
   let rawOn = false;
-  let announced = false;
-  let intent = "open";
-  let reconnects = 0;
-  const wake2 = { since: null, said: null, cold: false, stillSaid: false, asleep: false };
   let echo = null;
   if ((opts.localEcho ?? "off") !== "off") {
     if (session.localEchoAvailable !== true) ctx.err(LOCAL_ECHO_UNAVAILABLE);
@@ -10646,31 +11264,34 @@ async function attach(ctx, opts, io) {
       });
     }
   }
-  try {
-    for (; ; ) {
-      const headers = await client.upgradeHeaders(REMOTE_TERMINAL_WS_PATH, team.org.slug);
-      const ws = make(wsUrl(client.host, REMOTE_TERMINAL_WS_PATH), headers);
-      const opened = await new Promise((resolve) => {
-        ws.once("open", () => resolve(null));
-        ws.once("unexpected-response", (_req, res) => {
-          const status2 = res.statusCode ?? 0;
-          res.resume();
-          ws.terminate();
-          resolve(status2);
-        });
-        ws.once("error", () => resolve(0));
-      });
-      if (opened !== null) {
-        if (intent === "reconnect" && (opened === 0 || opened === 503) && reconnects < MAX_RECONNECTS) {
-          await sleep(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
-          reconnects += 1;
-          continue;
-        }
-        ctx.err(opened === 0 ? "hq: could not reach HQ." : upgradeRefusalMessage(opened));
-        return 1;
+  const attachSession = createAttachSession(
+    client,
+    { team, session },
+    {
+      write: (bytes) => {
+        io.stdout.write(bytes);
+      },
+      say: (line) => ctx.err(line),
+      size: () => ({ cols: io.stdout.columns ?? 80, rows: io.stdout.rows ?? 24 }),
+      onInput: (fn) => {
+        io.stdin.on("data", fn);
+        io.stdin.resume();
+        return () => {
+          io.stdin.off("data", fn);
+          io.stdin.pause();
+        };
+      },
+      onResize: (fn) => {
+        io.stdout.on("resize", fn);
+        return () => {
+          io.stdout.off?.("resize", fn);
+        };
       }
-      if (!announced) {
-        announced = true;
+    },
+    {
+      echo,
+      detachByte: DETACH_BYTE,
+      onFirstOpen: () => {
         ctx.err(
           `Attached to "${session.name}" (${session.ownerName}) \xB7 ${session.canType ? "you can type" : "view only"} \xB7 Ctrl-] to detach`
         );
@@ -10678,563 +11299,260 @@ async function attach(ctx, opts, io) {
           io.stdin.setRawMode(true);
           rawOn = true;
         }
-      }
-      const end = await runSocket(
-        ctx,
-        client,
-        io,
-        ws,
-        {
-          team,
-          session,
-          wake: wake2,
-          echo,
-          // Review N5: the budget is MAX_RECONNECTS drops IN A ROW. An admitted attach ends the row,
-          // so a day of hourly LB cuts never adds up to a give-up.
-          onAdmitted: () => {
-            reconnects = 0;
-          }
-        },
-        intent,
-        headers
-      );
-      if (end.kind === "dropped" && reconnects < MAX_RECONNECTS) {
-        ctx.err("\r\nhq: connection lost, reconnecting...");
-        await sleep(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
-        reconnects += 1;
-        intent = "reconnect";
-        continue;
-      }
-      if (end.kind === "dropped") {
-        ctx.err("\r\nhq: the connection to HQ was lost.");
-        return 1;
-      }
-      if (end.message) ctx.err(end.message);
-      return end.exitCode;
+      },
+      ...io.wsFactory ? { wsFactory: io.wsFactory } : {},
+      ...io.presenceIntervalMs !== void 0 ? { presenceIntervalMs: io.presenceIntervalMs } : {},
+      ...io.wakeRetryMs !== void 0 ? { wakeRetryMs: io.wakeRetryMs } : {},
+      ...io.wakeStillMs !== void 0 ? { wakeStillMs: io.wakeStillMs } : {},
+      ...io.wakeTimeoutMs !== void 0 ? { wakeTimeoutMs: io.wakeTimeoutMs } : {},
+      ...io.reconnectBaseMs !== void 0 ? { reconnectBaseMs: io.reconnectBaseMs } : {}
     }
+  );
+  try {
+    const end = await attachSession.run();
+    if (end.kind === "refused") {
+      ctx.err(end.status === 0 ? "hq: could not reach HQ." : upgradeRefusalMessage(end.status));
+      return 1;
+    }
+    if (end.kind === "lost") {
+      ctx.err("\r\nhq: the connection to HQ was lost.");
+      return 1;
+    }
+    if (end.message) ctx.err(end.message);
+    return end.exitCode;
   } finally {
     echo?.close();
     io.stdin.pause();
     if (rawOn) io.stdin.setRawMode(false);
   }
 }
-function runSocket(ctx, client, io, ws, target, intent, headers) {
-  const { team, session, wake: wake2, echo, onAdmitted } = target;
-  echo?.lifecycleReset();
-  const say = (line) => {
-    echo?.undrawNow();
-    ctx.err(line);
-  };
-  let lastToken = (headers.Authorization ?? "").slice("Bearer ".length);
-  const send = (frame) => {
-    if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify(frame));
-  };
-  const size = () => ({ cols: io.stdout.columns ?? 80, rows: io.stdout.rows ?? 24 });
-  let answerWaking = false;
-  let answerAsleep = false;
-  let attachOutstanding = false;
-  const attachFrame = (i) => {
-    answerWaking = false;
-    answerAsleep = false;
-    attachOutstanding = true;
-    send({ type: "attach", sessionId: session.id, ...size(), intent: i });
-  };
-  attachFrame(intent);
-  const filter = createTerminalQueryFilter();
-  return new Promise((resolve) => {
-    let exitCode = 0;
-    let errorMessage = null;
-    let userDetached = false;
-    let wakeTimer = null;
-    let wakeAttempts = 0;
-    let stillTimer = null;
-    let giveUpTimer = null;
-    let repaintedAt = 0;
-    const schedulePoll = () => {
-      if (wakeTimer !== null) return;
-      const base = io.wakeRetryMs ?? WAKE_RETRY_MS;
-      const delay = wakeAttempts === 0 ? base : Math.max(base, Math.min(WAKE_RETRY_MAX_MS, base * 2));
-      wakeAttempts += 1;
-      wakeTimer = setTimeout(() => {
-        wakeTimer = null;
-        attachFrame("reconnect");
-      }, delay);
-    };
-    const clearWakeTimers = () => {
-      if (wakeTimer) clearTimeout(wakeTimer);
-      if (stillTimer) clearTimeout(stillTimer);
-      if (giveUpTimer) clearTimeout(giveUpTimer);
-      wakeTimer = stillTimer = giveUpTimer = null;
-    };
-    const armWakeClocks = (since) => {
-      const now = Date.now();
-      if (stillTimer === null && !wake2.stillSaid) {
-        stillTimer = setTimeout(
-          () => {
-            if (wake2.since === null || wake2.cold || wake2.stillSaid) return;
-            wake2.stillSaid = true;
-            say("\r\nhq: Still on it...");
-          },
-          Math.max(0, since + (io.wakeStillMs ?? WAKE_STILL_ON_IT_MS) - now)
-        );
-      }
-      if (giveUpTimer === null) {
-        giveUpTimer = setTimeout(
-          () => {
-            say(`\r
-${wakeTimeoutMessage(team)}`);
-            errorMessage = "";
-            exitCode = 1;
-            ws.terminate();
-          },
-          Math.max(0, since + (io.wakeTimeoutMs ?? WAKE_TIMEOUT_MS) - now)
-        );
-      }
-    };
-    const clearWake = () => {
-      wake2.since = null;
-      wake2.said = null;
-      wake2.cold = false;
-      wake2.stillSaid = false;
-      wakeAttempts = 0;
-      clearWakeTimers();
-    };
-    const endWake = () => {
-      if (wake2.since === null) return;
-      clearWake();
-      wake2.asleep = false;
-      attachFrame("open");
-    };
-    if (wake2.since !== null) armWakeClocks(wake2.since);
-    const tokenTimer = setInterval(() => {
-      void client.accessToken().then((t) => {
-        if (t !== lastToken) {
-          lastToken = t;
-          send({ type: "remote-token", token: t });
-        }
-      }).catch(() => void 0);
-    }, TOKEN_CHECK_MS);
-    const presenceTimer = setInterval(
-      () => send({ type: "presence", sessionId: session.id }),
-      io.presenceIntervalMs ?? PRESENCE_MS
-    );
-    presenceTimer.unref?.();
-    tokenTimer.unref?.();
-    const rttTimers = [];
-    if (echo) {
-      const ping = () => {
-        if (ws.readyState !== wrapper_default.OPEN) return;
-        try {
-          ws.ping(String(Date.now()));
-        } catch {
-        }
-      };
-      ws.on("pong", (payload) => {
-        const sentAt = Number(payload.toString("utf8"));
-        if (Number.isFinite(sentAt)) echo.rttSample(Date.now() - sentAt);
-      });
-      ping();
-      for (const ms of RTT_BURST_MS) rttTimers.push(setTimeout(ping, ms));
-      rttTimers.push(setInterval(ping, RTT_PING_MS));
-      for (const tm of rttTimers) tm.unref?.();
-    }
-    const onResize = () => {
-      echo?.resize(size().cols, size().rows);
-      send({ type: "resize", sessionId: session.id, ...size() });
-    };
-    const onData = (chunk) => {
-      const i = chunk.indexOf(DETACH_BYTE);
-      const before = i >= 0 ? chunk.subarray(0, i) : chunk;
-      if (before.length > 0 && wake2.asleep) {
-        wake2.asleep = false;
-        attachFrame("open");
-      }
-      if (session.canType && before.length > 0) {
-        const data = before.toString("utf8");
-        echo?.key(data);
-        send({ type: "input", sessionId: session.id, data });
-      }
-      if (i >= 0) {
-        echo?.close();
-        userDetached = true;
-        send({ type: "detach", sessionId: session.id });
-        ws.close(1e3);
-      }
-    };
-    io.stdout.on("resize", onResize);
-    io.stdin.on("data", onData);
-    io.stdin.resume();
-    ws.on("message", (data) => {
-      let frame;
-      try {
-        frame = JSON.parse(data.toString("utf8"));
-      } catch {
-        return;
-      }
-      if (frame.sessionId !== void 0 && frame.sessionId !== null && frame.sessionId !== session.id)
-        return;
-      if ((frame.type === "output" || frame.type === "history") && "data" in frame) {
-        if (frame.type === "history") repaintedAt = Date.now();
-        wake2.asleep = false;
-        const clean = filter.push(frame.data);
-        if (clean.length > 0) {
-          if (!echo) io.stdout.write(clean);
-          else if (frame.type === "history") echo.repaint(clean);
-          else echo.output(clean);
-        }
-      } else if (frame.type === "reset") {
-        repaintedAt = Date.now();
-        if (echo) echo.repaint("\x1B[H\x1B[2J\x1B[3J");
-        else io.stdout.write("\x1B[H\x1B[2J\x1B[3J");
-      } else if (frame.type === "attached") {
-        attachOutstanding = false;
-        onAdmitted();
-        if (answerWaking) {
-          schedulePoll();
-          return;
-        }
-        if (answerAsleep) {
-          if (wake2.since !== null) clearWake();
-          return;
-        }
-        endWake();
-      } else if (frame.type === "error" && "message" in frame) {
-        const code = "code" in frame ? frame.code : "";
-        if (WAKE_CODES.has(code)) {
-          answerWaking = true;
-          wake2.asleep = false;
-          wake2.cold = code === "SESSION_RESUME_COLD_RESTART";
-          if (wake2.since === null) wake2.since = Date.now();
-          armWakeClocks(wake2.since);
-          if (wake2.said !== frame.message) {
-            wake2.said = frame.message;
-            say(`\r
-hq: ${frame.message}`);
-          }
-          if (!attachOutstanding) schedulePoll();
-          return;
-        }
-        errorMessage = `\r
-hq: ${frame.message}`;
-        exitCode = 1;
-        ws.close(1e3);
-      } else if (frame.type === "notice" && "text" in frame) {
-        const code = "code" in frame ? frame.code : void 0;
-        if (code === HISTORY_UNAVAILABLE_NOTICE && (wake2.since !== null || wake2.asleep || Date.now() - repaintedAt < HISTORY_NOTICE_GRACE_MS))
-          return;
-        if (code === WORKSPACE_ASLEEP_NOTICE) {
-          wake2.asleep = true;
-          answerAsleep = true;
-        }
-        say(`\r
-hq: ${frame.text}`);
-      }
-    });
-    ws.on("error", () => void 0);
-    ws.on("close", (code) => {
-      for (const tm of rttTimers) clearTimeout(tm);
-      clearInterval(tokenTimer);
-      clearInterval(presenceTimer);
-      clearWakeTimers();
-      io.stdin.off("data", onData);
-      io.stdout.off?.("resize", onResize);
-      io.stdin.pause();
-      const held = filter.flush();
-      if (held.length > 0 && !userDetached) {
-        if (echo) echo.output(held);
-        else io.stdout.write(held);
-      }
-      echo?.undrawNow();
-      if (!userDetached && exitCode === 0 && (code === 1006 || code === 1001)) {
-        resolve({ kind: "dropped" });
-        return;
-      }
-      if (code === 4401) {
-        resolve({
-          kind: "ended",
-          exitCode: 1,
-          message: "\r\nhq: your access to this session ended."
-        });
-        return;
-      }
-      if (errorMessage !== null) {
-        if (errorMessage.length > 0) say(errorMessage);
-        resolve({ kind: "ended", exitCode, message: null });
-        return;
-      }
-      resolve({ kind: "ended", exitCode, message: "\r\nhq: detached." });
-    });
-  });
-}
 
-// cli/src/commands/forward.ts
-var import_node_net = __toESM(require("node:net"), 1);
-
-// cli/src/commands/up.ts
-var import_node_child_process3 = require("node:child_process");
-
-// cli/src/ssh-config-file.ts
-var import_node_fs6 = require("node:fs");
-var import_node_crypto4 = require("node:crypto");
-var import_node_os3 = __toESM(require("node:os"), 1);
-var import_node_path3 = __toESM(require("node:path"), 1);
-
-// cli/src/file-lock.ts
-var import_node_fs5 = require("node:fs");
-var import_node_crypto3 = require("node:crypto");
-var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
-async function acquireFileLock(file, opts = {}) {
-  const staleMs = opts.staleMs ?? 1e4;
-  const deadline = Date.now() + (opts.waitMs ?? 1e4);
-  const mine = `${process.pid}:${(0, import_node_crypto3.randomBytes)(8).toString("hex")}`;
-  let delay = 10;
-  for (; ; ) {
-    try {
-      const fd = (0, import_node_fs5.openSync)(file, "wx", 384);
-      try {
-        (0, import_node_fs5.writeSync)(fd, mine);
-      } finally {
-        (0, import_node_fs5.closeSync)(fd);
-      }
-      return () => {
-        try {
-          if ((0, import_node_fs5.readFileSync)(file, "utf8") === mine) (0, import_node_fs5.rmSync)(file, { force: true });
-        } catch {
-        }
-      };
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-    }
-    let age = 0;
-    try {
-      age = Date.now() - (0, import_node_fs5.statSync)(file).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (age > staleMs || Date.now() > deadline) {
-      (0, import_node_fs5.rmSync)(file, { force: true });
-      continue;
-    }
-    await sleep2(delay);
-    delay = Math.min(delay * 2, 250);
-  }
-}
-
-// cli/src/ssh-config-file.ts
-var BLOCK_BEGIN = "# >>> hq managed block. Do not edit; regenerate with `hq ssh --config` <<<";
-var BLOCK_END = "# <<< hq managed block >>>";
-function tildify(p, home = import_node_os3.default.homedir()) {
-  return p === home ? "~" : p.startsWith(home + import_node_path3.default.sep) ? `~/${import_node_path3.default.relative(home, p).split(import_node_path3.default.sep).join("/")}` : p;
-}
-function quote(p) {
-  return `"${p.replace(/"/g, '\\"')}"`;
-}
-function shQuote(p) {
-  return `'${p.replace(/'/g, "'\\''")}'`;
-}
-function sshTokenEscape(command) {
-  return command.replace(/%/g, "%%");
-}
-function unstablePathWarnings(nodePath, script) {
-  const warnings = [];
-  if (/[\\/]_npx[\\/]/.test(script)) {
-    warnings.push(
-      `hq: this hq runs from an npx cache (${script}), which npm clears, and your SSH config would then point at nothing. Install it with \`npm install -g --ignore-scripts @aiworkforceoneofficial/hq\` and run \`hq ssh --config\` again.`
-    );
-  }
-  const nvm = /[\\/]\.nvm[\\/]versions[\\/]node[\\/]v[^\\/]+[\\/]/;
-  if (nvm.test(nodePath) || nvm.test(script)) {
-    warnings.push(
-      "hq: node and hq come from an nvm install of ONE Node version; after you switch or remove that version the SSH config points at a path that is gone. Run `hq ssh --config` again after changing Node versions."
-    );
-  }
-  return warnings;
-}
-function resolveLauncher(env, platform, nodePath = process.execPath, scriptPath = process.argv[1] ?? "") {
-  let script = scriptPath;
-  try {
-    script = (0, import_node_fs6.realpathSync)(scriptPath);
-  } catch {
-  }
-  const warnings = unstablePathWarnings(nodePath, script);
-  if (platform === "win32") {
-    const bin = hqPaths(env).binDir;
-    (0, import_node_fs6.mkdirSync)(bin, { recursive: true });
-    const cmd = import_node_path3.default.join(bin, "hq.cmd");
-    (0, import_node_fs6.writeFileSync)(cmd, `@echo off\r
-${quote(nodePath)} ${quote(script)} %*\r
-`);
-    return { command: sshTokenEscape(quote(cmd)), warnings };
-  }
-  return { command: sshTokenEscape(`${shQuote(nodePath)} ${shQuote(script)}`), warnings };
-}
-var UnsafeTeamError = class extends Error {
-  constructor() {
-    super("hq: refusing to write a team whose name or id is not in the expected form");
-    this.name = "UnsafeTeamError";
-  }
+// cli/src/command-manifest.ts
+var CLI_TAGLINE = "connect this computer to your HQ team machines";
+var HELP_FOOTNOTE = "<team> is the hq-\u2026 name from hq status, or the team's name. --org <slug> narrows either.";
+var ORG_FLAG = {
+  name: "org",
+  valueHint: "<slug>",
+  description: "Only look in this organization, when you belong to more than one."
 };
-function renderTeamBlock(team, launcher, home = import_node_os3.default.homedir(), env = process.env) {
-  if (!isWellFormedTeam(team)) throw new UnsafeTeamError();
-  const paths = hqPaths(env);
+var CLI_COMMANDS = [
+  {
+    name: "login",
+    usage: ["hq login [--host <url>]"],
+    summary: "Sign this computer in with a one-time code you approve in HQ in your browser. The login is stored in the system keychain, or in `~/.hq/credentials.json` where there is none.",
+    help: [
+      {
+        text: "hq login [--host <url>]",
+        summary: "sign this computer in (approve it in your browser)"
+      }
+    ],
+    flags: [
+      {
+        name: "host",
+        valueHint: "<url>",
+        description: "The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`."
+      }
+    ],
+    examples: [
+      { cmd: "hq login", description: "Sign in to HQ. Your browser opens the approval page." },
+      {
+        cmd: "hq login --host https://hq.aiworkforceone.com",
+        description: "Sign in to a specific HQ address."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "Signed in." },
+      {
+        code: 1,
+        meaning: "The login was denied in the browser, the code expired, or HQ could not be reached."
+      }
+    ]
+  },
+  {
+    name: "status",
+    usage: ["hq status"],
+    summary: "Show who is signed in and every team you can reach, with its `hq-\u2026` name, whether its machine is running, and what you may do there.",
+    help: [{ text: "hq status", summary: "who you are and the teams you can reach" }],
+    flags: [],
+    examples: [{ cmd: "hq status", description: "List your teams and their `hq-\u2026` names." }],
+    exitCodes: [
+      { code: 0, meaning: "Printed." },
+      { code: 1, meaning: "Not signed in, or HQ could not be reached." }
+    ]
+  },
+  {
+    name: "up",
+    usage: ["hq up <team> [--org <slug>]"],
+    summary: "Wake a sleeping team machine and wait until it is ready (about 15 seconds, up to 3 minutes).",
+    help: [{ text: "hq up <team>", summary: "wake a team machine" }],
+    flags: [ORG_FLAG],
+    examples: [{ cmd: "hq up hq-3f9a1c2e", description: "Wake the team with this `hq-\u2026` name." }],
+    exitCodes: [
+      { code: 0, meaning: "The team machine is running." },
+      {
+        code: 1,
+        meaning: "No such team, remote access is off, or the machine did not wake within 3 minutes."
+      },
+      { code: 2, meaning: "No team named." }
+    ]
+  },
+  {
+    name: "attach",
+    usage: ["hq attach <session> [--team <t>] [--local-echo[=auto|always|off]] [--org <slug>]"],
+    summary: "Join an HQ session in this terminal and follow it live. Only the session owner can type; everyone else watches. Press `Ctrl-]` to detach; the session keeps running.",
+    help: [
+      {
+        text: "hq attach <session> [--team <t>]",
+        summary: "join an HQ session in this terminal (Ctrl-] to detach)"
+      },
+      {
+        text: "    [--local-echo[=auto|always|off]]",
+        summary: "show what you type instantly (or set HQ_LOCAL_ECHO)"
+      }
+    ],
+    flags: [
+      {
+        name: "team",
+        valueHint: "<t>",
+        description: "Only look for the session in this team (its `hq-\u2026` name or its name). Use it when the same session name exists in two teams."
+      },
+      {
+        name: "local-echo",
+        valueHint: "[=auto|always|off]",
+        description: "Draw what you type immediately instead of after the round trip. Bare `--local-echo` means `auto`. Wins over `HQ_LOCAL_ECHO`; off when neither is set. Your organization must allow it."
+      },
+      ORG_FLAG
+    ],
+    examples: [
+      {
+        cmd: "hq attach 7c21e0b4",
+        description: "Attach by the first characters of the session id."
+      },
+      {
+        cmd: 'hq attach "fix login bug" --team hq-3f9a1c2e --local-echo',
+        description: "Attach by session name in one team, with local echo."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "Detached with `Ctrl-]`, or the session ended." },
+      {
+        code: 1,
+        meaning: "No session matched (or more than one did), HQ could not be reached, or your access ended."
+      },
+      { code: 2, meaning: "No session named, or `--local-echo` was not auto, always or off." }
+    ]
+  },
+  {
+    name: "forward",
+    usage: ["hq forward <port> [--local <port>] [--team <t>] [--org <slug>]"],
+    summary: "Make a port on the team machine reachable at `http://localhost:<port>` on this computer, until you press `Ctrl-C`.",
+    help: [{ text: "hq forward <port> [--local <port>] [--team <t>]" }],
+    flags: [
+      {
+        name: "local",
+        valueHint: "<port>",
+        description: "The port on this computer. Defaults to the same number as the team port. It listens on 127.0.0.1 only."
+      },
+      {
+        name: "team",
+        valueHint: "<t>",
+        description: "Which team to forward from. Optional when exactly one of your teams lets you forward ports."
+      },
+      ORG_FLAG
+    ],
+    examples: [
+      {
+        cmd: "hq forward 3000",
+        description: "Reach port 3000 on the team machine at localhost:3000."
+      },
+      {
+        cmd: "hq forward 5173 --local 8080 --team hq-3f9a1c2e",
+        description: "Reach port 5173 of one team at localhost:8080."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "Stopped with `Ctrl-C`." },
+      {
+        code: 1,
+        meaning: "No team lets you forward, the local port is taken, or the forward ended on the HQ side."
+      },
+      {
+        code: 2,
+        meaning: "The team port is missing or not a number from 1024 to 65535, or `--local` is not a port."
+      }
+    ]
+  },
+  {
+    name: "logout",
+    usage: ["hq logout"],
+    summary: "Revoke this computer's access on HQ (in every organization) and remove the stored login.",
+    help: [{ text: "hq logout", summary: "sign out and revoke this computer's access" }],
+    flags: [],
+    examples: [{ cmd: "hq logout", description: "Sign out and revoke this computer." }],
+    exitCodes: [
+      {
+        code: 0,
+        meaning: "Signed out. If HQ could not be reached, the login is still removed from this computer and a warning is printed."
+      }
+    ]
+  },
+  {
+    name: "ssh",
+    removed: true,
+    usage: ["hq ssh"],
+    summary: SSH_REMOVED_MESSAGE,
+    help: [],
+    flags: [],
+    examples: [{ cmd: "hq ssh", description: "Prints that SSH was removed and what to use." }],
+    exitCodes: [{ code: 1, meaning: "Always: SSH was removed." }]
+  },
+  {
+    name: "ssh-proxy",
+    removed: true,
+    usage: ["hq ssh-proxy"],
+    summary: `${SSH_REMOVED_MESSAGE} An old \`Host hq-\u2026\` entry in \`~/.ssh/hq_config\` still runs this; delete that file and its \`Include\` line in \`~/.ssh/config\`.`,
+    help: [],
+    flags: [],
+    examples: [
+      { cmd: "hq ssh-proxy", description: "Prints that SSH was removed and what to use." }
+    ],
+    exitCodes: [
+      {
+        code: 255,
+        meaning: "Always: SSH was removed (what ssh itself uses, so an editor reports it)."
+      }
+    ]
+  },
+  {
+    name: "open",
+    removed: true,
+    usage: ["hq open"],
+    summary: SSH_REMOVED_MESSAGE,
+    help: [],
+    flags: [],
+    examples: [{ cmd: "hq open", description: "Prints that SSH was removed and what to use." }],
+    exitCodes: [{ code: 1, meaning: "Always: SSH was removed." }]
+  }
+];
+var HELP_COLUMN = 37;
+function helpLine(line) {
+  const lead = `  ${line.text}`;
+  if (line.summary === void 0) return lead;
+  return lead.length < HELP_COLUMN ? `${lead.padEnd(HELP_COLUMN)}${line.summary}` : `${lead} ${line.summary}`;
+}
+function renderUsage(version) {
   return [
-    BLOCK_BEGIN,
-    `# ${oneLine(team.org.name)} (${team.org.slug}) / ${oneLine(team.workspace.name)}`,
-    `Host ${team.alias}`,
-    `  HostName ${team.alias}.hq.invalid`,
-    "  User node",
-    `  ProxyCommand ${launcher.command} ssh-proxy --workspace ${team.workspace.id} --org ${team.org.slug}`,
-    `  HostKeyAlias ${team.alias}`,
-    `  UserKnownHostsFile ${tildify(paths.knownHosts, home)}`,
-    "  StrictHostKeyChecking yes",
-    `  IdentityFile ${tildify(paths.privateKey, home)}`,
-    "  IdentitiesOnly yes",
-    "  ConnectTimeout 180",
-    "  ServerAliveInterval 30",
-    "  ServerAliveCountMax 4",
-    "  ForwardAgent no",
-    BLOCK_END
+    `hq ${version}: ${CLI_TAGLINE}`,
+    "",
+    "Usage:",
+    ...CLI_COMMANDS.flatMap((c) => c.help.map(helpLine)),
+    "",
+    HELP_FOOTNOTE
   ].join("\n");
 }
-function renderHqConfig(teams, launcher, home = import_node_os3.default.homedir(), env = process.env) {
-  const blocks = teams.filter(isWellFormedTeam).map((t) => renderTeamBlock(t, launcher, home, env));
-  return blocks.length === 0 ? "" : `${blocks.join("\n\n")}
-`;
-}
-function withIncludeLine(existing, includeTarget) {
-  const already = existing.split(/\r?\n/).some((l) => /^\s*include\s+/i.test(l) && l.includes("hq_config"));
-  if (already) return { text: existing, changed: false };
-  const line = `Include ${includeTarget}`;
-  const text = existing.length === 0 ? `${line}
-` : `${line}
 
-${existing}`;
-  return { text, changed: true };
-}
-function writeSshConfig(teams, launcher, env = process.env, home = import_node_os3.default.homedir()) {
-  const dir = sshDir(env);
-  (0, import_node_fs6.mkdirSync)(dir, { recursive: true, mode: 448 });
-  const hqConfigPath = import_node_path3.default.join(dir, "hq_config");
-  (0, import_node_fs6.writeFileSync)(hqConfigPath, renderHqConfig(teams, launcher, home, env), { mode: 384 });
-  (0, import_node_fs6.chmodSync)(hqConfigPath, 384);
-  const sshConfigPath = import_node_path3.default.join(dir, "config");
-  const existing = (0, import_node_fs6.existsSync)(sshConfigPath) ? (0, import_node_fs6.readFileSync)(sshConfigPath, "utf8") : "";
-  const { text, changed } = withIncludeLine(existing, tildify(hqConfigPath, home));
-  if (changed) (0, import_node_fs6.writeFileSync)(sshConfigPath, text, { mode: 384 });
-  const skipped = teams.filter((t) => !isWellFormedTeam(t));
-  return {
-    hqConfigPath,
-    sshConfigPath,
-    includeAdded: changed,
-    written: teams.length - skipped.length,
-    skipped
-  };
-}
-async function pinHostKey(alias, hostKeyLine, env = process.env, deps = {}) {
-  const parts = hostKeyLine.trim().split(/\s+/);
-  if (!ALIAS_RE.test(alias) || parts.length < 2 || !/^ssh-ed25519$|^ecdsa-sha2-nistp256$|^ssh-rsa$/.test(parts[0]) || !/^[A-Za-z0-9+/=]+$/.test(parts[1])) {
-    return;
-  }
-  const file = hqPaths(env).knownHosts;
-  (0, import_node_fs6.mkdirSync)(import_node_path3.default.dirname(file), { recursive: true, mode: 448 });
-  const release = await acquireFileLock(`${file}.lock`);
-  try {
-    const lines = (0, import_node_fs6.existsSync)(file) ? (0, import_node_fs6.readFileSync)(file, "utf8").split("\n").filter((l) => l.trim().length > 0) : [];
-    await deps.afterRead?.();
-    const kept = lines.filter((l) => l.split(/\s+/)[0] !== alias);
-    kept.push(`${alias} ${parts[0]} ${parts[1]}`);
-    const tmp = `${file}.${process.pid}.${(0, import_node_crypto4.randomBytes)(6).toString("hex")}.tmp`;
-    const writeFile = deps.writeFile ?? ((f, data) => (0, import_node_fs6.writeFileSync)(f, data, { mode: 384 }));
-    try {
-      writeFile(tmp, `${kept.join("\n")}
-`);
-      (deps.rename ?? import_node_fs6.renameSync)(tmp, file);
-    } catch (err) {
-      (0, import_node_fs6.rmSync)(tmp, { force: true });
-      throw err;
-    }
-  } finally {
-    release();
-  }
-}
-
-// cli/src/commands/up.ts
-async function loadTeam(ctx, ref, org) {
-  const state = readState(ctx.env);
-  const client = clientFor(ctx, state);
-  const { body: orgs } = await client.request("GET", "/api/remote/orgs");
-  writeState({ ...state, orgs }, ctx.env);
-  return { team: resolveTeam(orgs, ref, org), client };
-}
-async function wake(ctx, team, client) {
-  const ready = await openConnection(
-    client,
-    team,
-    { scope: "ssh", client: "hq", intent: "open", wake: true },
-    { now: ctx.now, sleep: ctx.sleep, say: ctx.err }
-  );
-  if (ready.hostKey) await pinHostKey(team.alias, ready.hostKey, ctx.env);
-  await closeConnection(client, team, ready.id);
-}
-async function up(ctx, opts) {
-  try {
-    const { team, client } = await loadTeam(ctx, opts.team, opts.org);
-    await wake(ctx, team, client);
-    ctx.out(`Team "${team.workspace.name}" is awake.`);
-    return 0;
-  } catch (err) {
-    ctx.err(err instanceof ConnectRefusedError ? err.message : err.message);
-    return 1;
-  }
-}
-function teamDir(team) {
-  return `/data/workspaces/${team.workspace.id}`;
-}
-function editorArgv(editor, withCmd, team) {
-  const host = team.alias;
-  const dir = teamDir(team);
-  if (withCmd) {
-    const parts = withCmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-    return parts.map(
-      (p) => p.replace(/^["']|["']$/g, "").replace(/\{host\}/g, host).replace(/\{dir\}/g, dir)
-    );
-  }
-  if (editor === "cursor") return ["cursor", "--remote", `ssh-remote+${host}`, dir];
-  if (editor === "zed") return ["zed", `ssh://${host}${dir}`];
-  return null;
-}
-async function open(ctx, opts, run2 = runDetached) {
-  try {
-    const { team, client } = await loadTeam(ctx, opts.team, opts.org);
-    const argv = editorArgv(opts.editor, opts.with, team);
-    if (!argv || argv.length === 0) {
-      ctx.err('hq: name an editor (cursor or zed), or pass --with "<command {host} {dir}>".');
-      return 2;
-    }
-    await wake(ctx, team, client);
-    ctx.out(`Opening ${team.workspace.name} (${team.alias})...`);
-    return await run2(argv);
-  } catch (err) {
-    ctx.err(err instanceof ConnectRefusedError ? err.message : err.message);
-    return 1;
-  }
-}
-function runDetached(argv) {
-  return new Promise((resolve) => {
-    const child = (0, import_node_child_process3.spawn)(argv[0], argv.slice(1), { stdio: "ignore", detached: true });
-    child.once("error", () => {
-      process.stderr.write(`hq: could not start "${argv[0]}". Is it installed and on your PATH?
-`);
-      resolve(1);
-    });
-    child.once("spawn", () => {
-      child.unref();
-      resolve(0);
-    });
-  });
-}
-
-// cli/src/commands/forward.ts
+// hq-client/src/forward.ts
+var import_node_net = __toESM(require("node:net"), 1);
 var HEARTBEAT_MS = 3e4;
 function parsePort(v, min) {
   if (!v || !/^\d+$/.test(v)) return null;
@@ -11249,12 +11567,20 @@ var Lock = class {
     return next;
   }
 };
-async function startForward(ctx, client, team, remotePort, localPort, wsFactory) {
+async function startForward(deps, client, team, remotePort, localPort, opts = {}) {
+  const wsFactory = opts.wsFactory;
   const conn = await openConnection(
     client,
     team,
-    { scope: "forward", port: remotePort, localPort, client: "hq", intent: "open", wake: true },
-    { now: ctx.now, sleep: ctx.sleep, say: ctx.err }
+    {
+      scope: "forward",
+      port: remotePort,
+      localPort,
+      client: opts.clientKind ?? "hq",
+      intent: "open",
+      wake: opts.wake ?? true
+    },
+    deps
   );
   const lock = new Lock();
   const org = team.org.slug;
@@ -11287,7 +11613,7 @@ async function startForward(ctx, client, team, remotePort, localPort, wsFactory)
       await pipeTunnel(ws, sock, sock);
       if (!sock.destroyed) sock.end();
     }).catch((err) => {
-      ctx.err(
+      deps.say(
         err instanceof TunnelRefusedError ? err.message : `hq: stream failed (${err.message})`
       );
       sock.destroy();
@@ -11302,7 +11628,7 @@ async function startForward(ctx, client, team, remotePort, localPort, wsFactory)
   const done = new Promise((r) => resolveDone = r);
   const heartbeat = setInterval(() => {
     void lock.run(() => client.request("GET", connectionsPath(team, conn.id), { org, signed: true })).catch((err) => {
-      ctx.err(`hq: the forward ended (${err.message}).`);
+      deps.say(`hq: the forward ended (${err.message}).`);
       void close(1);
     });
   }, HEARTBEAT_MS);
@@ -11315,6 +11641,64 @@ async function startForward(ctx, client, team, remotePort, localPort, wsFactory)
     resolveDone(code);
   };
   return { port: bound, close: () => close(0), done };
+}
+
+// cli/src/commands/up.ts
+async function loadTeam(ctx, ref, org) {
+  const state = readState(ctx.env);
+  const client = clientFor(ctx, state);
+  const { body: orgs } = await client.request("GET", "/api/remote/orgs");
+  writeState({ ...state, orgs }, ctx.env);
+  return { team: resolveTeam(orgs, ref, org), client };
+}
+async function wake(ctx, team, client) {
+  const base = `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}`;
+  let answer;
+  try {
+    answer = await client.request("POST", `${base}/wake`, {
+      org: team.org.slug,
+      signed: true
+    });
+  } catch (err) {
+    throw new ConnectRefusedError(refusalMessage(team, err));
+  }
+  if (answer.body.state === "running") return;
+  ctx.err(`hq: waking team "${team.workspace.name}" (about 15 s)...`);
+  const deadline = ctx.now() + WAKE_TIMEOUT_MS;
+  while (ctx.now() < deadline) {
+    await ctx.sleep(WAKE_POLL_MS);
+    let ws;
+    try {
+      ws = (await client.request("GET", base, { org: team.org.slug })).body;
+    } catch (err) {
+      throw new ConnectRefusedError(refusalMessage(team, err));
+    }
+    if (ws.state === "running") return;
+  }
+  throw new ConnectRefusedError(wakeTimeoutMessage(team));
+}
+async function up(ctx, opts) {
+  try {
+    const { team, client } = await loadTeam(ctx, opts.team, opts.org);
+    await wake(ctx, team, client);
+    ctx.out(`Team "${team.workspace.name}" is awake.`);
+    return 0;
+  } catch (err) {
+    ctx.err(err instanceof ConnectRefusedError ? err.message : err.message);
+    return 1;
+  }
+}
+
+// cli/src/commands/forward.ts
+function startForward2(ctx, client, team, remotePort, localPort, wsFactory) {
+  return startForward(
+    { now: ctx.now, sleep: ctx.sleep, say: ctx.err },
+    client,
+    team,
+    remotePort,
+    localPort,
+    { clientKind: "hq", ...wsFactory ? { wsFactory } : {} }
+  );
 }
 async function forward(ctx, opts) {
   const remotePort = parsePort(opts.port, 1024);
@@ -11330,7 +11714,7 @@ async function forward(ctx, opts) {
   try {
     const teamRef = opts.team ?? "";
     const { team, client } = await loadTeamForForward(ctx, teamRef, opts.org);
-    const handle = await startForward(ctx, client, team, remotePort, localPort);
+    const handle = await startForward2(ctx, client, team, remotePort, localPort);
     ctx.out(
       `Forwarding http://localhost:${handle.port} -> ${team.workspace.name} :${remotePort}   (Ctrl-C to stop)`
     );
@@ -11359,8 +11743,8 @@ async function loadTeamForForward(ctx, ref, org) {
 
 // cli/src/commands/login.ts
 function platformLabel(platform, arch) {
-  const os5 = platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform === "linux" ? "Linux" : platform;
-  return `${os5} ${arch}`;
+  const os3 = platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform === "linux" ? "Linux" : platform;
+  return `${os3} ${arch}`;
 }
 function isOnHost(url, host) {
   let u;
@@ -11379,7 +11763,7 @@ async function login(ctx, opts) {
   const host = opts.host ? normalizeHost(opts.host) : state.host;
   const key = ensureDeviceKey(ctx.env, `hq@${ctx.hostname()}`);
   const deviceLabel = ctx.hostname();
-  const start = await postJson(
+  const start = await postJson2(
     ctx.fetch,
     `${host}/api/remote/device/start`,
     {
@@ -11417,7 +11801,7 @@ async function login(ctx, opts) {
   const deadline = ctx.now() + s.expiresIn * 1e3;
   while (ctx.now() < deadline) {
     await ctx.sleep(interval * 1e3);
-    const poll = await postJson(
+    const poll = await postJson2(
       ctx.fetch,
       `${host}/api/remote/device/poll`,
       { deviceCode: s.deviceCode }
@@ -11441,7 +11825,6 @@ async function login(ctx, opts) {
       if (approved.orgs.length > 0) {
         ctx.out(`Orgs: ${approved.orgs.map((o) => `${o.name} (${o.slug})`).join(", ")}`);
       }
-      ctx.out("Next: hq ssh --config");
       return 0;
     }
     if (poll.status === 200 && (poll.body.status === "authorization_pending" || poll.body.status === "slow_down")) {
@@ -11476,10 +11859,20 @@ async function logout(ctx) {
     return 0;
   }
   const client = clientFor(ctx, state);
+  let revoked = true;
   try {
     await client.request("DELETE", `/api/remote/grants/${state.grantId}`, { signed: true });
   } catch (err) {
-    if (!(err instanceof NotLoggedInError) && !(err instanceof HqApiError && (err.status === 401 || err.status === 404))) {
+    if (err instanceof NotLoggedInError || err instanceof HqApiError && err.status === 404) {
+    } else if (err instanceof HqApiError && err.status === 401) {
+      if (!await client.confirmRevoked()) {
+        revoked = false;
+        ctx.err(
+          "hq: HQ did not confirm that this computer\u2019s access ended. Remove it in HQ, under Account, Devices."
+        );
+      }
+    } else {
+      revoked = false;
       ctx.err(
         `hq: could not reach HQ to revoke this device (${err.message}). Signed out locally.`
       );
@@ -11487,115 +11880,10 @@ async function logout(ctx) {
   }
   deleteTokens(state.host, ctx.env);
   writeState({ host: state.host }, ctx.env);
-  ctx.out("Signed out. This device's access is revoked.");
-  return 0;
-}
-
-// cli/src/commands/ssh-config.ts
-var import_node_os4 = __toESM(require("node:os"), 1);
-async function sshConfig(ctx) {
-  const state = readState(ctx.env);
-  const client = clientFor(ctx, state);
-  const { body: orgs } = await client.request("GET", "/api/remote/orgs");
-  writeState({ ...state, orgs }, ctx.env);
-  ensureDeviceKey(ctx.env);
-  const { teams: all, skipped } = partitionTeams(orgs);
-  const teams = all.filter((t) => t.org.remoteAccess.allowed && t.workspace.rights.ssh);
-  const launcher = resolveLauncher(ctx.env, ctx.platform);
-  for (const warning of launcher.warnings ?? []) ctx.err(warning);
-  const written = writeSshConfig(teams, launcher, ctx.env);
-  if (skipped.length > 0) {
-    ctx.err(
-      `hq: skipped ${skipped.length} ${skipped.length === 1 ? "team" : "teams"} whose id or org name is not in the expected form. Check that ${state.host} is your HQ address.`
-    );
-  }
-  const home = import_node_os4.default.homedir();
   ctx.out(
-    `Wrote ${tildify(written.hqConfigPath, home)} (Included from ${tildify(written.sshConfigPath, home)}), ${teams.length} ${teams.length === 1 ? "team" : "teams"}:`
-  );
-  for (const t of teams) {
-    const note = t.workspace.supported ? "" : "   (machine update pending)";
-    ctx.out(`  ${t.alias.padEnd(12)}  ${t.org.name} / ${t.workspace.name}${note}`);
-  }
-  const off = orgs.filter((o) => !o.remoteAccess.allowed);
-  for (const o of off) ctx.out(`  ${o.name}: remote access is off for this org.`);
-  if (teams.length === 0) {
-    ctx.out(
-      "No team is reachable over SSH yet. An org owner turns it on in HQ: Settings \u2192 Security \u2192 Remote access."
-    );
-    return 0;
-  }
-  ctx.out(
-    `Connect:  ssh ${teams[0].alias}   or pick the host in a Remote-SSH-compatible editor (Cursor, JetBrains Gateway, Zed).`
-  );
-  ctx.out(
-    'Editors that ignore ConnectTimeout: set their SSH connect timeout to 180 s and the remote platform to "linux".'
-  );
-  ctx.out(
-    "Jobs started in a plain ssh shell get SIGHUP when the connection closes (hourly at the latest); use an HQ session or a schedule for long runs."
+    revoked ? "Signed out. This device's access is revoked." : "Signed out on this computer."
   );
   return 0;
-}
-
-// cli/src/commands/ssh-proxy.ts
-var EXIT_REFUSED = 255;
-function teamFor(orgs, workspaceId, org) {
-  const hit = withTeamAliases(orgs ?? []).find(
-    (t) => t.workspace.id === workspaceId && t.org.slug === org
-  );
-  if (hit) return hit;
-  const alias = workspaceAlias(workspaceId);
-  return {
-    alias,
-    org: {
-      id: "",
-      slug: org,
-      name: org,
-      role: "member",
-      remoteAccess: { allowed: true },
-      workspaces: []
-    },
-    workspace: {
-      id: workspaceId,
-      alias,
-      name: alias,
-      state: "stopped",
-      rights: { ssh: true, forward: false, attach: false },
-      supported: true
-    }
-  };
-}
-async function sshProxy(ctx, opts, io) {
-  const say = ctx.err;
-  const state = readState(ctx.env);
-  const team = teamFor(state.orgs, opts.workspace, opts.org);
-  const client = clientFor(ctx, state);
-  try {
-    await client.ensureFresh();
-    const ready = await openConnection(
-      client,
-      team,
-      { scope: "ssh", client: "ssh", intent: "open", ...opts.wake ? { wake: true } : {} },
-      { now: ctx.now, sleep: ctx.sleep, say }
-    );
-    if (ready.hostKey) await pinHostKey(team.alias, ready.hostKey, ctx.env);
-    const ws = await openTunnelSocket(client, team.org.slug, ready.connectCode, io.wsFactory);
-    say("hq: connected");
-    const code = await pipeTunnel(ws, io.stdin, io.stdout);
-    const msg = closeMessage(code);
-    if (msg) {
-      say(msg);
-      return EXIT_REFUSED;
-    }
-    return 0;
-  } catch (err) {
-    if (err instanceof ConnectRefusedError || err instanceof TunnelRefusedError || err instanceof NotLoggedInError) {
-      say(err.message);
-    } else {
-      say(`hq: ${err.message}`);
-    }
-    return EXIT_REFUSED;
-  }
 }
 
 // cli/src/commands/status.ts
@@ -11608,7 +11896,7 @@ async function status(ctx) {
     `${state.user?.email ?? "signed in"} \xB7 ${orgs.length} ${orgs.length === 1 ? "org" : "orgs"}`
   );
   for (const t of withTeamAliases(orgs)) {
-    const note = !t.org.remoteAccess.allowed ? "remote access off" : !t.workspace.supported ? "machine update pending" : t.workspace.rights.ssh ? "remote access ready" : t.workspace.rights.attach ? "attach only" : "no access";
+    const note = !t.org.remoteAccess.allowed ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}` : !t.workspace.supported ? "machine update pending" : !t.workspace.rights.forward && !t.workspace.rights.attach ? "no access" : t.workspace.state === "stopped" ? "no running machine, start a session in HQ first" : t.workspace.rights.forward ? "remote access ready" : "attach only";
     const state2 = t.workspace.state === "running" ? "awake" : t.workspace.state === "starting" ? "starting" : t.workspace.state === "asleep" ? "asleep" : "off";
     ctx.out(
       `  ${t.alias.padEnd(12)}  ${t.org.slug}/${t.workspace.name.padEnd(18)}  ${state2.padEnd(8)}  ${note}`
@@ -11616,8 +11904,24 @@ async function status(ctx) {
   }
   return 0;
 }
+function deniedReasonText(reason) {
+  switch (reason) {
+    case "two_factor_required":
+      return "two-step verification needed (run hq login again)";
+    case "plan_inactive":
+      return "the plan is not active";
+    case "feature_not_in_plan":
+      return "not included in this plan";
+    case "staged_rollout":
+      return "not available to this org yet";
+    case "advanced_terminal_off":
+      return "the advanced terminal is off for this org";
+    default:
+      return "turned off for this org";
+  }
+}
 
-// cli/src/local-echo/mode.ts
+// hq-client/src/local-echo/mode.ts
 var MODES = /* @__PURE__ */ new Set(["auto", "always", "off"]);
 function resolveLocalEchoMode(flag, env) {
   if (flag === true) return { mode: "auto" };
@@ -11632,21 +11936,7 @@ function resolveLocalEchoMode(flag, env) {
 }
 
 // cli/src/main.ts
-var USAGE = `hq ${HQ_VERSION}: connect this computer to your HQ team machines
-
-Usage:
-  hq login [--host <url>]            sign this computer in (approve it in your browser)
-  hq ssh --config                    write ~/.ssh/hq_config for your teams
-  hq status                          who you are and the teams you can reach
-  hq up <team>                       wake a team machine
-  hq open cursor|zed <team>          wake a team, then open it in that editor
-  hq open --with "<cmd {host} {dir}>" <team>
-  hq attach <session> [--team <t>]   join an HQ session in this terminal (Ctrl-] to detach)
-      [--local-echo[=auto|always|off]] show what you type instantly (or set HQ_LOCAL_ECHO)
-  hq forward <port> [--local <port>] [--team <t>]
-  hq logout                          sign out and revoke this computer's access
-
-<team> is the hq-\u2026 name from hq status, or the team's name. --org <slug> narrows either.`;
+var USAGE = renderUsage(HQ_VERSION);
 async function run(argv, ctx = defaultCtx()) {
   const args = parseArgs(argv);
   const [cmd, ...rest] = args.positionals;
@@ -11669,39 +11959,18 @@ async function run(argv, ctx = defaultCtx()) {
         return await logout(ctx);
       case "status":
         return await status(ctx);
+      // SSH to team machines was removed on 2026-10-01. The SSH commands stay only to say so, so a
+      // script or an old ~/.ssh/hq_config entry gets the reason instead of "unknown command".
       case "ssh":
-        if (args.flags.has("config")) return await sshConfig(ctx);
-        ctx.err("hq: to connect, run hq ssh --config once, then ssh <hq-name>.");
-        return 2;
-      case "ssh-proxy": {
-        const workspace = flagString(args, "workspace");
-        if (!workspace || !org) {
-          ctx.err(
-            "hq: ssh-proxy needs --workspace <id> and --org <slug> (it is written by hq ssh --config)."
-          );
-          return 255;
-        }
-        return await sshProxy(
-          ctx,
-          { workspace, org, wake: args.flags.has("wake") },
-          { stdin: process.stdin, stdout: process.stdout }
-        );
-      }
+      case "open":
+        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        return 1;
+      case "ssh-proxy":
+        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        return 255;
       case "up":
         if (!rest[0]) break;
         return await up(ctx, { team: rest[0], ...org ? { org } : {} });
-      case "open": {
-        const withCmd = flagString(args, "with");
-        const team = withCmd ? rest[0] : rest[1];
-        const editor = withCmd ? void 0 : rest[0];
-        if (!team) break;
-        return await open(ctx, {
-          team,
-          ...editor ? { editor } : {},
-          ...withCmd ? { with: withCmd } : {},
-          ...org ? { org } : {}
-        });
-      }
       case "attach": {
         if (!rest[0]) break;
         const team = flagString(args, "team");

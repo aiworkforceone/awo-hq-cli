@@ -9,7 +9,7 @@ export interface ParsedArgs {
  * here so `hq attach --local-echo mysession` keeps `mysession` as the session (feature `local-echo`,
  * Decision 16); its mode, when given, is `--local-echo=<auto|always|off>`.
  */
-const BOOLEAN_FLAGS = new Set(['config', 'wake', 'help', 'version', 'local-echo']);
+const BOOLEAN_FLAGS = new Set(['help', 'version', 'local-echo']);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];

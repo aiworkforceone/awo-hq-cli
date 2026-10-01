@@ -29,7 +29,11 @@ await build({
   banner: { js: '#!/usr/bin/env node' },
   define: { __HQ_VERSION__: JSON.stringify(pkg.version) },
   external: ['bufferutil', 'utf-8-validate'],
-  alias: { '@kpa/shared': path.join(root, 'shared', 'src') },
+  alias: {
+    '@kpa/shared': path.join(root, 'shared', 'src'),
+    // hq-vscode decision 4: the client code the CLI shares with the VS Code extension.
+    '@hq/client': path.join(root, 'hq-client', 'src'),
+  },
   nodePaths: [path.join(root, 'node_modules')],
   logLevel: 'info',
 });
