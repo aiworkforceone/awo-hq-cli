@@ -56,14 +56,6 @@ function flagTable(flags: CliFlag[]): string[] {
 
 function commandSection(c: CliCommand): string[] {
   const out = [`## hq ${c.name}`, '', prose(c.summary), ''];
-  if (c.removed) {
-    out.push(
-      '<Callout title="Removed">',
-      '  This command only prints that SSH was removed and exits. It no longer connects.',
-      '</Callout>',
-      '',
-    );
-  }
   out.push('```bash', ...c.usage, '```', '');
   if (c.flags.length > 0) out.push('**Flags**', '', ...flagTable(c.flags), '');
   out.push('**Examples**', '', '```bash');
@@ -83,10 +75,13 @@ function commandSection(c: CliCommand): string[] {
   return out;
 }
 
-/** The whole page. Deterministic: the same manifest always renders the same bytes. */
+/**
+ * The whole page. Deterministic: the same manifest always renders the same bytes. A removed command
+ * (the SSH stubs) is left out, exactly as `hq --help` leaves it out: the page documents what `hq`
+ * offers, and the stub itself tells anyone who still runs it what to use instead.
+ */
 export function renderReferenceMdx(): string {
-  const people = CLI_COMMANDS.filter((c) => !c.removed);
-  const removed = CLI_COMMANDS.filter((c) => c.removed);
+  const current = CLI_COMMANDS.filter((c) => !c.removed);
   return [
     '---',
     'title: CLI reference',
@@ -114,8 +109,7 @@ export function renderReferenceMdx(): string {
     '| --- | --- |',
     ...CLI_ENV.map((v) => `| \`${v.name}\` | ${cell(v.description)} |`),
     '',
-    ...people.flatMap(commandSection),
-    ...removed.flatMap(commandSection),
+    ...current.flatMap(commandSection),
   ]
     .join('\n')
     .replace(/\n+$/, '\n');

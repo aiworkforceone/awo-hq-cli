@@ -1,7 +1,7 @@
 {
   "name": "@aiworkforceoneofficial/hq",
-  "version": "0.2.0",
-  "description": "Connect your computer to your AI Workforce One HQ team machines: attach and port forwarding.",
+  "version": "0.2.1",
+  "description": "Connect your computer to your AI Team Cloud Computers in AI Workforce One HQ: attach and port forwarding.",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",

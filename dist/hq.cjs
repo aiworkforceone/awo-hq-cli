@@ -8781,7 +8781,7 @@ ${method.toUpperCase()}
 ${path3}
 ${bodySha256Hex.toLowerCase()}`;
 }
-var SSH_REMOVED_MESSAGE = "SSH access to team machines was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.";
+var SSH_REMOVED_MESSAGE = "SSH access to AI Team Cloud Computers was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.";
 function workspaceAlias(workspaceId, hexChars = 8) {
   return `hq-${workspaceId.replace(/-/g, "").slice(0, hexChars).toLowerCase()}`;
 }
@@ -9013,6 +9013,7 @@ var RefreshUnansweredError = class extends Error {
     this.name = "RefreshUnansweredError";
   }
 };
+var NONCE_TIMEOUT_MS = 1e4;
 var REFRESH_MARGIN_MS = 2 * 60 * 1e3;
 var REFRESH_LOCK_STALE_MS = 3e4;
 var REFRESH_LOCK_WAIT_MS = 2e4;
@@ -9208,14 +9209,22 @@ var HqClient = class {
   }
   /** `GET /api/remote/nonce`, never the cache. */
   async fetchNonce() {
-    const res = await this.fetchFn(`${this.host}/api/remote/nonce`, {
-      headers: {
-        Authorization: `Bearer ${await this.accessToken()}`,
-        ...this.clientHeaders
-      }
-    });
-    if (!res.ok) throw await this.toError(res);
-    return (await res.json()).nonce;
+    const auth = `Bearer ${await this.accessToken()}`;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      this.opts.nonceTimeoutMs ?? NONCE_TIMEOUT_MS
+    );
+    try {
+      const res = await this.fetchFn(`${this.host}/api/remote/nonce`, {
+        headers: { Authorization: auth, ...this.clientHeaders },
+        signal: controller.signal
+      });
+      if (!res.ok) throw await this.toError(res);
+      return (await res.json()).nonce;
+    } finally {
+      clearTimeout(timer);
+    }
   }
   /** Headers for a signed WebSocket upgrade (`GET <path>`, empty body). */
   async upgradeHeaders(path3, org, extra = {}) {
@@ -9512,7 +9521,7 @@ function deleteTokens(host, env = process.env) {
 }
 
 // cli/src/version.ts
-var HQ_VERSION = "0.2.0".length > 0 ? "0.2.0" : "0.0.0-dev";
+var HQ_VERSION = "0.2.1".length > 0 ? "0.2.1" : "0.0.0-dev";
 
 // cli/src/api.ts
 var CLI_CLIENT_HEADERS = {
@@ -9542,7 +9551,7 @@ function postJson2(fetchFn, url, body) {
 }
 
 // cli/src/args.ts
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["help", "version", "local-echo"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["help", "version", "local-echo", "no-browser"]);
 function parseArgs(argv) {
   const positionals = [];
   const flags = /* @__PURE__ */ new Map();
@@ -9608,6 +9617,17 @@ function createTerminalQueryFilter() {
   };
 }
 
+// shared/src/terminal-input.ts
+var MIN_CLAIM_COLS = 40;
+var MIN_CLAIM_ROWS = 10;
+var PASSIVE_INPUT_RE = /^(?:\x1b\[[IO]|\x1b\[<6[4-7];\d+;\d+[Mm])+$/;
+function isPassiveTerminalInput(data) {
+  return data.length > 0 && PASSIVE_INPUT_RE.test(data);
+}
+function mayClaimSize(dims) {
+  return dims.cols >= MIN_CLAIM_COLS && dims.rows >= MIN_CLAIM_ROWS;
+}
+
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
@@ -9648,13 +9668,13 @@ function refusalMessage(team, err) {
       return `hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
     }
     if (err.code === "RUNNER_UNAVAILABLE") {
-      return `hq: team "${name}" has no running machine. Open the team in HQ and start a session to start it.`;
+      return `hq: team "${name}" has no running Cloud Computer. Open the team in HQ and start a session to start it.`;
     }
     if (err.code === "REMOTE_UNSUPPORTED_RUNNER" && err.details?.reason === "restart_required") {
-      return `hq: team "${name}" must restart its machine before remote access works (remote access was turned on while it was running). An owner or admin can stop and start it from the team page in HQ.`;
+      return `hq: team "${name}" cannot forward ports yet: its AI Team Cloud Computer started before Developer access was turned on. Restart the AI Team Cloud Computer, then try again. An owner or admin presses Restart Cloud Computer in the team's Settings in HQ.`;
     }
     if (err.code === "REMOTE_UNSUPPORTED_RUNNER") {
-      return `hq: team "${name}" runs an older machine image without remote access. An owner or admin can update it: HQ \u2192 ${name} \u2192 Settings \u2192 Update machine.`;
+      return `hq: team "${name}" runs an older Cloud Computer image without remote access. An owner or admin can update it: HQ \u2192 ${name} \u2192 Settings \u2192 Update Cloud Computer.`;
     }
     if (err.code === "THROTTLED") {
       return `hq: too many open connections to team "${name}". Close one and try again.`;
@@ -9743,14 +9763,15 @@ function upgradeRefusalMessage(status2) {
   if (status2 === 403) return "hq: remote access to this team is not allowed for you right now.";
   if (status2 === 404) return "hq: remote access is not available on this HQ.";
   if (status2 === 409)
-    return "hq: this team machine needs an update before it accepts this connection. An owner or admin can update it in HQ.";
+    return "hq: this AI Team Cloud Computer needs an update before it accepts this connection. An owner or admin can update it in HQ.";
   if (status2 === 429)
     return "hq: too many connection attempts right now. Wait a minute and try again.";
   if (status2 === 501)
-    return "hq: connections to team machines are not switched on for this HQ yet. Ask an owner or admin.";
+    return "hq: connections to AI Team Cloud Computers are not switched on for this HQ yet. Ask an owner or admin.";
   if (status2 === 503) return "hq: HQ is restarting. Try again in a moment.";
-  if (status2 === 504) return "hq: the team machine did not answer in time. Try again in a moment.";
-  return `hq: the team machine could not be reached (HTTP ${status2}).`;
+  if (status2 === 504)
+    return "hq: the AI Team Cloud Computer did not answer in time. Try again in a moment.";
+  return `hq: the AI Team Cloud Computer could not be reached (HTTP ${status2}).`;
 }
 var defaultWs = (url, headers) => new wrapper_default(url, { headers, perMessageDeflate: false });
 async function openTunnelSocket(client, org, connectCode, factory = defaultWs) {
@@ -9839,11 +9860,22 @@ var WORKSPACE_ASLEEP_NOTICE = "workspace_asleep";
 var RECONNECT_BASE_MS = 1e3;
 var RECONNECT_MAX_MS = 1e4;
 var MAX_RECONNECTS = 8;
+var QUIET_RECONNECT_NOTICE_MS = 3e3;
+var HANDOVER_AFTER_MS = 55 * 6e4;
+var HANDOVER_JITTER_MS = 3 * 6e4;
+var HANDOVER_RETRY_MS = 6e4;
+var HANDOVER_LAST_START_MS = 59 * 6e4;
+var HANDOVER_SETTLE_MS = 300;
+var HANDOVER_ADMIT_MS = 15e3;
+var HANDOVER_INPUT_HOLD_MS = 2e3;
 var RTT_PING_MS = 3e4;
 var RTT_BURST_MS = [500, 1e3, 1500];
 var TERMINAL_ERROR_CODES = /* @__PURE__ */ new Set(["NOT_FOUND", "SESSION_STOPPED", "FORBIDDEN"]);
 var ERROR_RETRY_MS = 2e3;
 var ERROR_RETRY_MAX_MS = 1e4;
+var CLAIM_DEBOUNCE_MS = 300;
+var REPAINT_DEBOUNCE_MS = 150;
+var OWN_RESIZE_ECHO_MS = 1500;
 var WAKE_CODES = /* @__PURE__ */ new Set([
   "SESSION_STARTING",
   "SESSION_RESUMING",
@@ -9857,8 +9889,24 @@ var CLI_ATTACH_COPY = {
   reconnecting: "hq: connection lost, reconnecting...",
   accessEnded: "hq: your access to this session ended.",
   detached: "hq: detached.",
-  nowViewOnly: "hq: you can watch this session but not type in it."
+  nowViewOnly: "hq: you can watch this session but not type in it.",
+  sessionStopped: "hq: the session stopped.",
+  sessionError: "hq: the session exited with an error."
 };
+var ACCOUNT_ERROR_NAMES = /* @__PURE__ */ new Set([
+  "NeedsSignInError",
+  "AccountGoneError",
+  "SlotRenewedError"
+]);
+var ADMIT_STABLE_MS = 5e3;
+function isTransientUpgradeError(err) {
+  if (err instanceof NotLoggedInError || err instanceof RefreshNeedsRenewingError) return false;
+  if (err instanceof Error && ACCOUNT_ERROR_NAMES.has(err.name)) return false;
+  if (err instanceof HqApiError) {
+    return err.status >= 500 || err.status === 429 || err.status === 408;
+  }
+  return true;
+}
 var sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
 function cleanPorts(value) {
   if (!Array.isArray(value)) return null;
@@ -9878,6 +9926,9 @@ function createAttachSession(client, target, sink, opts = {}) {
   let current = null;
   let detachRequested = false;
   const detachHooks = /* @__PURE__ */ new Set();
+  const geometry = { pty: null, drawn: null, matchedTo: null, ownResize: null };
+  let claimNow = null;
+  let claimTimer = null;
   const setCanType = (next) => {
     if (next === canType) return;
     canType = next;
@@ -9887,56 +9938,129 @@ function createAttachSession(client, target, sink, opts = {}) {
     let announced = false;
     let intent = opts.initialIntent ?? "open";
     let reconnects = 0;
-    for (; ; ) {
-      if (detachRequested) return { kind: "ended", exitCode: 0, message: `\r
+    let admittedAt = null;
+    let lostNotice = null;
+    const cancelLostNotice = () => {
+      if (lostNotice) clearTimeout(lostNotice);
+      lostNotice = null;
+    };
+    let next = null;
+    try {
+      return await runLoop();
+    } finally {
+      cancelLostNotice();
+    }
+    async function runLoop() {
+      for (; ; ) {
+        if (detachRequested) return { kind: "ended", exitCode: 0, message: `\r
 ${copy.detached}` };
-      const headers = await client.upgradeHeaders(REMOTE_TERMINAL_WS_PATH, team.org.slug);
-      const ws = make(wsUrl(client.host, REMOTE_TERMINAL_WS_PATH), headers);
-      current = ws;
-      const opened = await new Promise((resolve) => {
-        ws.once("open", () => resolve(null));
-        ws.once("unexpected-response", (_req, res) => {
-          const status2 = res.statusCode ?? 0;
-          res.resume();
-          ws.terminate();
-          resolve(status2);
-        });
-        ws.once("error", () => resolve(0));
-      });
-      if (opened !== null) {
-        if ((reconnects > 0 || announced) && intent === "reconnect" && (opened === 0 || opened === 503) && reconnects < MAX_RECONNECTS) {
-          await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
-          reconnects += 1;
+        const adopt = next;
+        next = null;
+        let headers;
+        let ws;
+        if (adopt) {
+          headers = adopt.headers;
+          ws = adopt.ws;
+          current = ws;
+        } else {
+          try {
+            headers = await client.upgradeHeaders(REMOTE_TERMINAL_WS_PATH, team.org.slug);
+          } catch (err) {
+            if (!isTransientUpgradeError(err)) throw err;
+            if ((reconnects > 0 || announced) && reconnects < MAX_RECONNECTS) {
+              await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
+              reconnects += 1;
+              intent = "reconnect";
+              continue;
+            }
+            if (reconnects >= MAX_RECONNECTS) return { kind: "lost" };
+            return { kind: "refused", status: 0 };
+          }
+          ws = make(wsUrl(client.host, REMOTE_TERMINAL_WS_PATH), headers);
+          current = ws;
+          const opened = await new Promise((resolve) => {
+            ws.once("open", () => resolve(null));
+            ws.once("unexpected-response", (_req, res) => {
+              const status2 = res.statusCode ?? 0;
+              res.resume();
+              ws.terminate();
+              resolve(status2);
+            });
+            ws.once("error", () => resolve(0));
+          });
+          if (opened !== null) {
+            if ((reconnects > 0 || announced) && intent === "reconnect" && (opened === 0 || opened === 503) && reconnects < MAX_RECONNECTS) {
+              await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
+              reconnects += 1;
+              continue;
+            }
+            return { kind: "refused", status: opened };
+          }
+          if (!announced) {
+            announced = true;
+            opts.onFirstOpen?.();
+          }
+        }
+        const end = await runSocket(
+          ws,
+          () => {
+            admittedAt = Date.now();
+            cancelLostNotice();
+          },
+          intent,
+          headers,
+          adopt
+        );
+        if (end.kind === "handover") {
+          next = end;
           continue;
         }
-        return { kind: "refused", status: opened };
-      }
-      if (!announced) {
-        announced = true;
-        opts.onFirstOpen?.();
-      }
-      const end = await runSocket(
-        ws,
-        () => {
-          reconnects = 0;
-        },
-        intent,
-        headers
-      );
-      if (end.kind === "dropped" && reconnects < MAX_RECONNECTS) {
-        sink.say(`\r
+        const stable = admittedAt !== null && Date.now() - admittedAt >= (opts.admitStableMs ?? ADMIT_STABLE_MS);
+        if (stable) reconnects = 0;
+        admittedAt = null;
+        if (end.kind === "dropped" && reconnects < MAX_RECONNECTS) {
+          if (stable) {
+            lostNotice = setTimeout(() => {
+              lostNotice = null;
+              sink.say(`\r
 ${copy.reconnecting}`);
-        await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
-        reconnects += 1;
-        intent = "reconnect";
-        continue;
+            }, opts.quietReconnectNoticeMs ?? QUIET_RECONNECT_NOTICE_MS);
+          } else {
+            cancelLostNotice();
+            sink.say(`\r
+${copy.reconnecting}`);
+          }
+          await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
+          reconnects += 1;
+          intent = "reconnect";
+          continue;
+        }
+        if (end.kind === "dropped") return { kind: "lost" };
+        return end;
       }
-      if (end.kind === "dropped") return { kind: "lost" };
-      return end;
     }
   }
-  function runSocket(ws, onAdmitted, intent, headers) {
-    echo?.lifecycleReset();
+  const staleEcho = (dims, recheck) => {
+    const own = geometry.ownResize;
+    if (own === null) return false;
+    if (sameDims(own.dims, dims)) {
+      geometry.ownResize = null;
+      return false;
+    }
+    const left = own.at + OWN_RESIZE_ECHO_MS - Date.now();
+    if (left <= 0) {
+      geometry.ownResize = null;
+      return false;
+    }
+    setTimeout(() => {
+      if (geometry.ownResize !== own) return;
+      geometry.ownResize = null;
+      recheck();
+    }, left).unref?.();
+    return true;
+  };
+  function runSocket(ws, onAdmitted, intent, headers, adopt) {
+    if (!adopt) echo?.lifecycleReset();
     const say = (line) => {
       echo?.undrawNow();
       sink.say(line);
@@ -9946,17 +10070,32 @@ ${copy.reconnecting}`);
       if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify(frame));
     };
     const size = () => sink.size();
+    const drawn = () => geometry.drawn ?? size();
     let answerWaking = false;
     let answerAsleep = false;
     let attachOutstanding = false;
+    let repaintAfterOpen = false;
     const attachFrame = (i) => {
       answerWaking = false;
       answerAsleep = false;
       attachOutstanding = true;
-      send({ type: "attach", sessionId: session.id, ...size(), intent: i });
+      if (geometry.drawn === null) {
+        send({ type: "attach", sessionId: session.id, ...size(), intent: i });
+        return;
+      }
+      if (i === "open") {
+        repaintAfterOpen = true;
+        send({ type: "attach", sessionId: session.id, intent: i, repaint: true });
+        return;
+      }
+      send({ type: "attach", sessionId: session.id, ...drawn(), intent: i, repaint: true });
     };
-    attachFrame(intent);
-    const filter = (opts.createFilter ?? createTerminalQueryFilter)();
+    if (!adopt) attachFrame(intent);
+    let filter = adopt ? adopt.filter : (opts.createFilter ?? createTerminalQueryFilter)();
+    let heldKeys = adopt ? [] : null;
+    let reattachPending = false;
+    let resizeOnAdmit = false;
+    let statusSaid = null;
     return new Promise((resolve) => {
       let exitCode = 0;
       let errorMessage = null;
@@ -9969,6 +10108,15 @@ ${copy.reconnecting}`);
       let errorRetries = 0;
       let errorSaid = null;
       let repaintedAt = 0;
+      let lastOutputAt = 0;
+      if (adopt) {
+        onAdmitted();
+        void adopt.oldClosed.then(() => {
+          const keys = heldKeys ?? [];
+          heldKeys = null;
+          for (const data of keys) send({ type: "input", sessionId: session.id, data });
+        });
+      }
       const schedulePoll = () => {
         if (wakeTimer !== null) return;
         const base = opts.wakeRetryMs ?? WAKE_RETRY_MS;
@@ -10096,9 +10244,77 @@ ${copy.wakeTimeout(team)}`);
         );
         livenessTimer.unref?.();
       }
+      let repaintTimer = null;
+      let repaintPending = false;
+      const repaint = () => {
+        if (repaintTimer) clearTimeout(repaintTimer);
+        repaintTimer = setTimeout(() => {
+          repaintTimer = null;
+          if (wake2.since !== null || wake2.asleep) return;
+          if (attachOutstanding) repaintPending = true;
+          else attachFrame("reconnect");
+        }, REPAINT_DEBOUNCE_MS);
+      };
+      const sendOwnSize = () => {
+        const own = size();
+        geometry.ownResize = { dims: own, at: Date.now() };
+        send({ type: "resize", sessionId: session.id, ...own });
+      };
+      const becomeOwner = () => {
+        if (geometry.drawn === null) return;
+        geometry.drawn = null;
+        geometry.matchedTo = null;
+        sink.matchGeometry?.(null);
+        if (repaintTimer) clearTimeout(repaintTimer);
+        repaintTimer = null;
+        repaintPending = false;
+        const own = size();
+        echo?.resize(own.cols, own.rows);
+      };
+      const follow = (boxMoved = false) => {
+        const pty = geometry.pty;
+        if (pty === null) return;
+        const own = size();
+        if (sameDims(own, pty)) {
+          becomeOwner();
+          return;
+        }
+        const matched = geometry.matchedTo;
+        if (!boxMoved && geometry.drawn !== null && matched !== null && sameDims(matched, pty)) {
+          return;
+        }
+        const next = sink.matchGeometry ? sink.matchGeometry(pty) : own;
+        geometry.matchedTo = pty;
+        if (geometry.drawn !== null && sameDims(geometry.drawn, next)) return;
+        geometry.drawn = next;
+        echo?.resize(next.cols, next.rows);
+        repaint();
+      };
+      claimNow = () => {
+        if (!canType || geometry.drawn === null) return;
+        const own = size();
+        if (!mayClaimSize(own)) return;
+        geometry.drawn = null;
+        geometry.matchedTo = null;
+        sink.matchGeometry?.(null);
+        if (repaintTimer) clearTimeout(repaintTimer);
+        repaintTimer = null;
+        repaintPending = false;
+        echo?.resize(own.cols, own.rows);
+        if (geometry.pty !== null && sameDims(geometry.pty, own)) return;
+        sendOwnSize();
+      };
       const onResize = () => {
+        if (geometry.drawn !== null) {
+          follow(true);
+          return;
+        }
+        if (geometry.pty !== null && opts.inFront && !opts.inFront()) {
+          follow(true);
+          return;
+        }
         echo?.resize(size().cols, size().rows);
-        send({ type: "resize", sessionId: session.id, ...size() });
+        sendOwnSize();
       };
       const detachNow = () => {
         echo?.close();
@@ -10115,8 +10331,10 @@ ${copy.wakeTimeout(team)}`);
         }
         if (canType && before.length > 0) {
           const data = before.toString("utf8");
+          if (!isPassiveTerminalInput(data)) claimNow?.();
           echo?.key(data);
-          send({ type: "input", sessionId: session.id, data });
+          if (heldKeys) heldKeys.push(data);
+          else send({ type: "input", sessionId: session.id, data });
         }
         if (i >= 0) detachNow();
       };
@@ -10124,6 +10342,7 @@ ${copy.wakeTimeout(team)}`);
       const offResize = sink.onResize(onResize);
       const offInput = sink.onInput(onData);
       ws.on("message", (data) => {
+        if (handedOver) return;
         let frame;
         try {
           frame = JSON.parse(data.toString("utf8"));
@@ -10132,6 +10351,9 @@ ${copy.wakeTimeout(team)}`);
         }
         if (frame.sessionId !== void 0 && frame.sessionId !== null && frame.sessionId !== session.id)
           return;
+        if (frame.type === "output" || frame.type === "history" || frame.type === "reset") {
+          lastOutputAt = Date.now();
+        }
         if ((frame.type === "output" || frame.type === "history") && "data" in frame) {
           if (frame.type === "history") repaintedAt = Date.now();
           wake2.asleep = false;
@@ -10143,11 +10365,68 @@ ${copy.wakeTimeout(team)}`);
           }
         } else if (frame.type === "reset") {
           repaintedAt = Date.now();
+          if ("reattach" in frame && frame.reattach === true) {
+            echo?.lifecycleReset();
+            filter = (opts.createFilter ?? createTerminalQueryFilter)();
+            const wipe = "\x1Bc\x1B[H\x1B[2J\x1B[3J";
+            if (echo) echo.repaint(wipe);
+            else sink.write(wipe);
+            resizeOnAdmit = true;
+            if (attachOutstanding) reattachPending = true;
+            else attachFrame("reconnect");
+            return;
+          }
           if (echo) echo.repaint("\x1B[H\x1B[2J\x1B[3J");
           else sink.write("\x1B[H\x1B[2J\x1B[3J");
+        } else if (frame.type === "status" && "status" in frame) {
+          const st = typeof frame.status === "string" ? frame.status : "";
+          if (st === "error" && (wake2.since !== null || wake2.asleep)) return;
+          if (st === statusSaid) return;
+          statusSaid = st;
+          if (st === "stopped") say(`\r
+${copy.sessionStopped}`);
+          else if (st === "error") say(`\r
+${copy.sessionError}`);
+        } else if (frame.type === "geometry") {
+          const pty = wireDims(
+            "cols" in frame ? frame.cols : void 0,
+            "rows" in frame ? frame.rows : void 0
+          );
+          if (pty === null) return;
+          geometry.pty = pty;
+          if ("viewers" in frame && frame.viewers === 1) {
+            geometry.ownResize = null;
+            becomeOwner();
+            if (!sameDims(size(), pty)) sendOwnSize();
+            return;
+          }
+          if (staleEcho(pty, () => follow())) return;
+          follow();
+        } else if (frame.type === "ownership-changed") {
+          opts.onOwnershipChanged?.();
         } else if (frame.type === "attached") {
           attachOutstanding = false;
           onAdmitted();
+          if (reattachPending) {
+            reattachPending = false;
+            attachFrame("reconnect");
+            return;
+          }
+          if (resizeOnAdmit) {
+            resizeOnAdmit = false;
+            if (geometry.drawn === null) send({ type: "resize", sessionId: session.id, ...size() });
+          }
+          if (repaintAfterOpen) {
+            repaintAfterOpen = false;
+            repaintPending = true;
+          }
+          if (repaintPending) {
+            repaintPending = false;
+            if (wake2.since === null && !wake2.asleep) {
+              attachFrame("reconnect");
+              return;
+            }
+          }
           if (!answerWaking && !answerAsleep) {
             errorRetries = 0;
             errorSaid = null;
@@ -10222,8 +10501,7 @@ ${opts.noticeText ? opts.noticeText(code, frame.text) : `${copy.prefix}${frame.t
           );
         }
       });
-      ws.on("error", () => void 0);
-      ws.on("close", (code) => {
+      const teardown = () => {
         detachHooks.delete(detachNow);
         for (const tm of rttTimers) clearTimeout(tm);
         if (livenessTimer) clearInterval(livenessTimer);
@@ -10231,8 +10509,171 @@ ${opts.noticeText ? opts.noticeText(code, frame.text) : `${copy.prefix}${frame.t
         clearInterval(presenceTimer);
         clearWakeTimers();
         if (errorRetryTimer) clearTimeout(errorRetryTimer);
+        if (handoverTimer) clearTimeout(handoverTimer);
+        handoverTimer = null;
+        if (repaintTimer) clearTimeout(repaintTimer);
+        repaintTimer = null;
+        repaintPending = false;
+        claimNow = null;
         offInput();
         offResize();
+      };
+      const openedAt = adopt?.openedAt ?? Date.now();
+      const handoverAfter = opts.handoverAfterMs ?? HANDOVER_AFTER_MS;
+      const retryMs = opts.handoverRetryMs ?? HANDOVER_RETRY_MS;
+      let handoverTimer = null;
+      let handedOver = false;
+      let markOldClosed = () => void 0;
+      let standby = null;
+      const scheduleHandover = (delay) => {
+        if (handoverAfter <= 0 || handoverTimer !== null || handedOver || standby) return;
+        const lastStart = Math.max(HANDOVER_LAST_START_MS, handoverAfter);
+        if (Date.now() + delay - openedAt > lastStart) return;
+        handoverTimer = setTimeout(
+          () => {
+            handoverTimer = null;
+            void beginHandover();
+          },
+          Math.max(0, delay)
+        );
+      };
+      const steady = () => ws.readyState === wrapper_default.OPEN && !userDetached && !detachRequested && !attachOutstanding && !reattachPending && !resizeOnAdmit && errorRetryTimer === null && wake2.since === null && !wake2.asleep && heldKeys === null && // keys still waiting on the socket this one replaced
+      // terminal-shared-geometry: a repaint is on its way; a switch would drop it on the floor.
+      repaintTimer === null && !repaintPending && !repaintAfterOpen;
+      const giveUpStandby = (retry) => {
+        const sb = standby;
+        standby = null;
+        if (sb) {
+          if (sb.timer) clearTimeout(sb.timer);
+          if (sb.ws.readyState === wrapper_default.OPEN) sb.ws.close(1e3);
+          else sb.ws.terminate();
+        }
+        if (retry) scheduleHandover(retryMs);
+      };
+      const takeOver = (sb) => {
+        standby = null;
+        handedOver = true;
+        if (sb.timer) clearTimeout(sb.timer);
+        teardown();
+        sb.ws.removeAllListeners("message");
+        sb.ws.removeAllListeners("close");
+        sb.ws.removeAllListeners("unexpected-response");
+        const oldClosed = new Promise((done) => {
+          const hold = setTimeout(done, HANDOVER_INPUT_HOLD_MS);
+          markOldClosed = () => {
+            clearTimeout(hold);
+            done();
+          };
+        });
+        current = sb.ws;
+        resolve({
+          kind: "handover",
+          ws: sb.ws,
+          headers: sb.headers,
+          openedAt: sb.openedAt,
+          filter,
+          oldClosed
+        });
+        ws.close(1e3);
+      };
+      const settle = (sb) => {
+        if (sb.timer) clearTimeout(sb.timer);
+        sb.timer = setTimeout(() => {
+          sb.timer = null;
+          if (standby !== sb) return;
+          const quiet = lastOutputAt < sb.sentAt && !sb.sawOutput;
+          if (!quiet || !steady() || sb.ws.readyState !== wrapper_default.OPEN) giveUpStandby(true);
+          else takeOver(sb);
+        }, opts.handoverSettleMs ?? HANDOVER_SETTLE_MS);
+      };
+      const beginHandover = async () => {
+        if (standby || handedOver || ws.readyState !== wrapper_default.OPEN) return;
+        if (!steady()) {
+          scheduleHandover(retryMs);
+          return;
+        }
+        let h;
+        try {
+          h = await client.upgradeHeaders(REMOTE_TERMINAL_WS_PATH, team.org.slug);
+        } catch {
+          scheduleHandover(retryMs);
+          return;
+        }
+        if (standby || handedOver || !steady()) return;
+        const next = make(wsUrl(client.host, REMOTE_TERMINAL_WS_PATH), h);
+        const sb = {
+          ws: next,
+          headers: h,
+          openedAt: 0,
+          sentAt: Date.now(),
+          sawOutput: false,
+          timer: null
+        };
+        standby = sb;
+        next.on("error", () => void 0);
+        next.once("unexpected-response", (_req, res) => {
+          res.resume();
+          if (standby === sb) giveUpStandby(true);
+        });
+        next.once("close", () => {
+          if (standby === sb) giveUpStandby(true);
+        });
+        sb.timer = setTimeout(() => {
+          if (standby === sb) giveUpStandby(true);
+        }, HANDOVER_ADMIT_MS);
+        next.once("open", () => {
+          if (standby !== sb) return;
+          sb.openedAt = Date.now();
+          sb.sentAt = Date.now();
+          next.send(
+            JSON.stringify({
+              type: "attach",
+              sessionId: session.id,
+              ...drawn(),
+              intent: "reconnect",
+              // A non-owner's standby is its own attach, marked like every other (final review W1).
+              ...geometry.drawn !== null ? { repaint: true } : {}
+            })
+          );
+        });
+        next.on("message", (raw) => {
+          if (standby !== sb) return;
+          let f;
+          try {
+            f = JSON.parse(raw.toString("utf8"));
+          } catch {
+            return;
+          }
+          if (f.sessionId !== void 0 && f.sessionId !== null && f.sessionId !== session.id) {
+            return;
+          }
+          if (f.type === "history") return;
+          if (f.type === "output") {
+            sb.sawOutput = true;
+            return;
+          }
+          if (f.type === "attached") {
+            settle(sb);
+            return;
+          }
+          const benignNotice = f.type === "notice" && "code" in f && f.code === HISTORY_UNAVAILABLE_NOTICE;
+          if (f.type === "error" || f.type === "reset" || f.type === "notice" && !benignNotice) {
+            giveUpStandby(true);
+          }
+        });
+      };
+      if (handoverAfter > 0) {
+        const jitter = Math.random() * (opts.handoverJitterMs ?? HANDOVER_JITTER_MS);
+        scheduleHandover(handoverAfter - jitter - (Date.now() - openedAt));
+      }
+      ws.on("error", () => void 0);
+      ws.on("close", (code) => {
+        if (handedOver) {
+          markOldClosed();
+          return;
+        }
+        teardown();
+        giveUpStandby(false);
         const held = filter.flush();
         if (held.length > 0 && !userDetached) {
           if (echo) echo.output(held);
@@ -10272,8 +10713,24 @@ ${copy.detached}` });
         current.terminate();
       }
     },
-    canType: () => canType
+    canType: () => canType,
+    setCanType: (can) => setCanType(can),
+    claim: () => {
+      if (claimTimer) clearTimeout(claimTimer);
+      claimTimer = setTimeout(() => {
+        claimTimer = null;
+        if (opts.inFront && !opts.inFront()) return;
+        claimNow?.();
+      }, CLAIM_DEBOUNCE_MS);
+      claimTimer.unref?.();
+    }
   };
+}
+var sameDims = (a, b) => a.cols === b.cols && a.rows === b.rows;
+function wireDims(cols, rows) {
+  if (typeof cols !== "number" || typeof rows !== "number") return null;
+  if (!Number.isInteger(cols) || !Number.isInteger(rows)) return null;
+  return cols >= 1 && cols <= 500 && rows >= 1 && rows <= 300 ? { cols, rows } : null;
 }
 
 // cli/src/context.ts
@@ -10363,6 +10820,7 @@ function defaultCtx() {
       } catch {
       }
     },
+    stdoutIsTTY: process.stdout.isTTY === true,
     hostname: () => import_node_os2.default.hostname().split(".")[0] ?? "computer",
     platform: process.platform,
     arch: process.arch
@@ -11305,7 +11763,8 @@ async function attach(ctx, opts, io) {
       ...io.wakeRetryMs !== void 0 ? { wakeRetryMs: io.wakeRetryMs } : {},
       ...io.wakeStillMs !== void 0 ? { wakeStillMs: io.wakeStillMs } : {},
       ...io.wakeTimeoutMs !== void 0 ? { wakeTimeoutMs: io.wakeTimeoutMs } : {},
-      ...io.reconnectBaseMs !== void 0 ? { reconnectBaseMs: io.reconnectBaseMs } : {}
+      ...io.reconnectBaseMs !== void 0 ? { reconnectBaseMs: io.reconnectBaseMs } : {},
+      ...io.admitStableMs !== void 0 ? { admitStableMs: io.admitStableMs } : {}
     }
   );
   try {
@@ -11328,7 +11787,7 @@ async function attach(ctx, opts, io) {
 }
 
 // cli/src/command-manifest.ts
-var CLI_TAGLINE = "connect this computer to your HQ team machines";
+var CLI_TAGLINE = "connect this computer to your AI Team Cloud Computers";
 var HELP_FOOTNOTE = "<team> is the hq-\u2026 name from hq status, or the team's name. --org <slug> narrows either.";
 var ORG_FLAG = {
   name: "org",
@@ -11338,12 +11797,16 @@ var ORG_FLAG = {
 var CLI_COMMANDS = [
   {
     name: "login",
-    usage: ["hq login [--host <url>]"],
+    usage: ["hq login [--host <url>] [--no-browser]"],
     summary: "Sign this computer in with a one-time code you approve in HQ in your browser. The login is stored in the system keychain, or in `~/.hq/credentials.json` where there is none.",
     help: [
       {
         text: "hq login [--host <url>]",
         summary: "sign this computer in (approve it in your browser)"
+      },
+      {
+        text: "    [--no-browser]",
+        summary: "print the sign-in link instead of opening a browser"
       }
     ],
     flags: [
@@ -11351,6 +11814,10 @@ var CLI_COMMANDS = [
         name: "host",
         valueHint: "<url>",
         description: "The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`."
+      },
+      {
+        name: "no-browser",
+        description: "Print the sign-in link instead of opening a browser. `hq` also skips the browser when `HQ_NO_BROWSER=1` is set, on Linux with neither `DISPLAY` nor `WAYLAND_DISPLAY`, and when its output is not a terminal."
       }
     ],
     examples: [
@@ -11358,6 +11825,10 @@ var CLI_COMMANDS = [
       {
         cmd: "hq login --host https://hq.aiworkforceone.com",
         description: "Sign in to a specific HQ address."
+      },
+      {
+        cmd: "hq login --no-browser",
+        description: "Sign in from a server or a remote shell: open the printed link on any device."
       }
     ],
     exitCodes: [
@@ -11371,7 +11842,7 @@ var CLI_COMMANDS = [
   {
     name: "status",
     usage: ["hq status"],
-    summary: "Show who is signed in and every team you can reach, with its `hq-\u2026` name, whether its machine is running, and what you may do there.",
+    summary: "Show who is signed in and every team you can reach, with its `hq-\u2026` name, whether its AI Team Cloud Computer is running, and what you may do there.",
     help: [{ text: "hq status", summary: "who you are and the teams you can reach" }],
     flags: [],
     examples: [{ cmd: "hq status", description: "List your teams and their `hq-\u2026` names." }],
@@ -11383,15 +11854,15 @@ var CLI_COMMANDS = [
   {
     name: "up",
     usage: ["hq up <team> [--org <slug>]"],
-    summary: "Wake a sleeping team machine and wait until it is ready (about 15 seconds, up to 3 minutes).",
-    help: [{ text: "hq up <team>", summary: "wake a team machine" }],
+    summary: "Wake a sleeping AI Team Cloud Computer and wait until it is ready (about 15 seconds, up to 3 minutes).",
+    help: [{ text: "hq up <team>", summary: "wake an AI Team Cloud Computer" }],
     flags: [ORG_FLAG],
     examples: [{ cmd: "hq up hq-3f9a1c2e", description: "Wake the team with this `hq-\u2026` name." }],
     exitCodes: [
-      { code: 0, meaning: "The team machine is running." },
+      { code: 0, meaning: "The AI Team Cloud Computer is running." },
       {
         code: 1,
-        meaning: "No such team, remote access is off, or the machine did not wake within 3 minutes."
+        meaning: "No such team, remote access is off, or the Cloud Computer did not wake within 3 minutes."
       },
       { code: 2, meaning: "No team named." }
     ]
@@ -11445,7 +11916,7 @@ var CLI_COMMANDS = [
   {
     name: "forward",
     usage: ["hq forward <port> [--local <port>] [--team <t>] [--org <slug>]"],
-    summary: "Make a port on the team machine reachable at `http://localhost:<port>` on this computer, until you press `Ctrl-C`.",
+    summary: "Make a port on the AI Team Cloud Computer reachable at `http://localhost:<port>` on this computer, until you press `Ctrl-C`.",
     help: [{ text: "hq forward <port> [--local <port>] [--team <t>]" }],
     flags: [
       {
@@ -11463,7 +11934,7 @@ var CLI_COMMANDS = [
     examples: [
       {
         cmd: "hq forward 3000",
-        description: "Reach port 3000 on the team machine at localhost:3000."
+        description: "Reach port 3000 on the AI Team Cloud Computer at localhost:3000."
       },
       {
         cmd: "hq forward 5173 --local 8080 --team hq-3f9a1c2e",
@@ -11758,6 +12229,18 @@ function isOnHost(url, host) {
   if (u.origin !== h.origin || u.protocol !== "https:" && u.protocol !== "http:") return false;
   return !/[\s"'`<>|&^%]/.test(url);
 }
+function skipBrowser(ctx, noBrowser) {
+  if (noBrowser || ctx.env.HQ_NO_BROWSER === "1") return true;
+  if (!ctx.stdoutIsTTY) return true;
+  return ctx.platform === "linux" && !ctx.env.DISPLAY && !ctx.env.WAYLAND_DISPLAY;
+}
+var NEXT_STEPS = [
+  "Next:",
+  "  hq status                          see your teams and their hq-\u2026 names",
+  "  hq forward <port> --team <team>    reach a port on an AI Team Cloud Computer",
+  "  hq attach <session> --team <team>  join an HQ session in this terminal",
+  "Or use the AI Workforce One HQ extension for VS Code."
+];
 async function login(ctx, opts) {
   const state = readState(ctx.env);
   const host = opts.host ? normalizeHost(opts.host) : state.host;
@@ -11785,8 +12268,17 @@ async function login(ctx, opts) {
   const s = start.body;
   const pageUrl = isOnHost(s.verificationUrl, host) ? s.verificationUrl : `${host}/device`;
   const openUrl = isOnHost(s.verificationUrlComplete, host) ? s.verificationUrlComplete : pageUrl;
-  ctx.out(`Opening ${openUrl}`);
-  ctx.out(`If your browser did not open, go to ${pageUrl} and enter:`);
+  const browser = !skipBrowser(ctx, opts.noBrowser === true);
+  if (browser) {
+    ctx.out(`Opening ${openUrl}`);
+    ctx.out(`If your browser did not open, go to ${pageUrl} and enter:`);
+  } else if (openUrl === pageUrl) {
+    ctx.out(`Go to ${pageUrl} in a browser and enter:`);
+  } else {
+    ctx.out("Open this link in a browser to sign in:");
+    ctx.out(`    ${openUrl}`);
+    ctx.out(`Or go to ${pageUrl} and enter:`);
+  }
   ctx.out("");
   ctx.out(`    ${s.userCode}`);
   ctx.out("");
@@ -11796,7 +12288,7 @@ async function login(ctx, opts) {
   ctx.out(
     `Waiting for approval (code expires in ${Math.round(s.expiresIn / 60)} min, Ctrl-C to cancel)...`
   );
-  ctx.openUrl(openUrl);
+  if (browser) ctx.openUrl(openUrl);
   let interval = Math.max(5, s.interval);
   const deadline = ctx.now() + s.expiresIn * 1e3;
   while (ctx.now() < deadline) {
@@ -11825,6 +12317,7 @@ async function login(ctx, opts) {
       if (approved.orgs.length > 0) {
         ctx.out(`Orgs: ${approved.orgs.map((o) => `${o.name} (${o.slug})`).join(", ")}`);
       }
+      for (const line of NEXT_STEPS) ctx.out(line);
       return 0;
     }
     if (poll.status === 200 && (poll.body.status === "authorization_pending" || poll.body.status === "slow_down")) {
@@ -11896,7 +12389,7 @@ async function status(ctx) {
     `${state.user?.email ?? "signed in"} \xB7 ${orgs.length} ${orgs.length === 1 ? "org" : "orgs"}`
   );
   for (const t of withTeamAliases(orgs)) {
-    const note = !t.org.remoteAccess.allowed ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}` : !t.workspace.supported ? "machine update pending" : !t.workspace.rights.forward && !t.workspace.rights.attach ? "no access" : t.workspace.state === "stopped" ? "no running machine, start a session in HQ first" : t.workspace.rights.forward ? "remote access ready" : "attach only";
+    const note = !t.org.remoteAccess.allowed ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}` : !t.workspace.supported ? "Cloud Computer update pending" : !t.workspace.rights.forward && !t.workspace.rights.attach ? "no access" : t.workspace.state === "stopped" ? "no running Cloud Computer, start a session in HQ first" : t.workspace.rights.forward ? "remote access ready" : "attach only";
     const state2 = t.workspace.state === "running" ? "awake" : t.workspace.state === "starting" ? "starting" : t.workspace.state === "asleep" ? "asleep" : "off";
     ctx.out(
       `  ${t.alias.padEnd(12)}  ${t.org.slug}/${t.workspace.name.padEnd(18)}  ${state2.padEnd(8)}  ${note}`
@@ -11953,7 +12446,10 @@ async function run(argv, ctx = defaultCtx()) {
     switch (cmd) {
       case "login": {
         const host = flagString(args, "host");
-        return await login(ctx, host ? { host } : {});
+        return await login(ctx, {
+          ...host ? { host } : {},
+          noBrowser: args.flags.has("no-browser")
+        });
       }
       case "logout":
         return await logout(ctx);

@@ -18,11 +18,11 @@ export async function status(ctx: Ctx): Promise<number> {
     const note = !t.org.remoteAccess.allowed
       ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}`
       : !t.workspace.supported
-        ? 'machine update pending'
+        ? 'Cloud Computer update pending'
         : !t.workspace.rights.forward && !t.workspace.rights.attach
           ? 'no access'
           : t.workspace.state === 'stopped'
-            ? 'no running machine, start a session in HQ first'
+            ? 'no running Cloud Computer, start a session in HQ first'
             : t.workspace.rights.forward
               ? 'remote access ready'
               : 'attach only';

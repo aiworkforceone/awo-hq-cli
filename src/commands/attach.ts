@@ -141,6 +141,8 @@ export interface AttachIo {
   wakeStillMs?: number;
   wakeTimeoutMs?: number;
   reconnectBaseMs?: number;
+  /** Test seam: how long an admitted attach must stay up to reset the reconnect budget. */
+  admitStableMs?: number;
 }
 
 export async function attach(
@@ -225,6 +227,7 @@ export async function attach(
       ...(io.wakeStillMs !== undefined ? { wakeStillMs: io.wakeStillMs } : {}),
       ...(io.wakeTimeoutMs !== undefined ? { wakeTimeoutMs: io.wakeTimeoutMs } : {}),
       ...(io.reconnectBaseMs !== undefined ? { reconnectBaseMs: io.reconnectBaseMs } : {}),
+      ...(io.admitStableMs !== undefined ? { admitStableMs: io.admitStableMs } : {}),
     },
   );
 

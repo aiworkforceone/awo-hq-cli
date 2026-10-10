@@ -42,12 +42,12 @@ export interface CliCommand {
   exitCodes: { code: number; meaning: string }[];
   /**
    * Removed (SSH, 2026-10-01): kept only as a stub that prints why and what to use instead. Never in
-   * `hq --help`; listed last on the reference page so a person searching for it finds the reason.
+   * `hq --help` and never on the reference page; the stub's own message is the explanation.
    */
   removed?: boolean;
 }
 
-export const CLI_TAGLINE = 'connect this computer to your HQ team machines';
+export const CLI_TAGLINE = 'connect this computer to your AI Team Cloud Computers';
 
 const HELP_FOOTNOTE =
   "<team> is the hq-… name from hq status, or the team's name. --org <slug> narrows either.";
@@ -72,7 +72,7 @@ export const GLOBAL_FLAGS: CliFlag[] = [
   },
 ];
 
-/** Environment variables the CLI reads (paths.ts, state.ts, keychain.ts, local-echo/mode.ts). */
+/** Environment variables the CLI reads (paths.ts, state.ts, keychain.ts, local-echo/mode.ts, login.ts). */
 export const CLI_ENV: { name: string; description: string }[] = [
   {
     name: 'HQ_HOST',
@@ -88,6 +88,11 @@ export const CLI_ENV: { name: string; description: string }[] = [
     description: '`auto`, `always` or `off` for `hq attach`. The `--local-echo` flag wins over it.',
   },
   {
+    name: 'HQ_NO_BROWSER',
+    description:
+      'Set to `1` and `hq login` prints the sign-in link instead of opening a browser, like `--no-browser`.',
+  },
+  {
     name: 'HQ_KEYCHAIN',
     description:
       'Set to `file` to store the login in `~/.hq/credentials.json` (readable only by you) instead of the system keychain.',
@@ -97,13 +102,17 @@ export const CLI_ENV: { name: string; description: string }[] = [
 export const CLI_COMMANDS: CliCommand[] = [
   {
     name: 'login',
-    usage: ['hq login [--host <url>]'],
+    usage: ['hq login [--host <url>] [--no-browser]'],
     summary:
       'Sign this computer in with a one-time code you approve in HQ in your browser. The login is stored in the system keychain, or in `~/.hq/credentials.json` where there is none.',
     help: [
       {
         text: 'hq login [--host <url>]',
         summary: 'sign this computer in (approve it in your browser)',
+      },
+      {
+        text: '    [--no-browser]',
+        summary: 'print the sign-in link instead of opening a browser',
       },
     ],
     flags: [
@@ -113,12 +122,22 @@ export const CLI_COMMANDS: CliCommand[] = [
         description:
           'The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`.',
       },
+      {
+        name: 'no-browser',
+        description:
+          'Print the sign-in link instead of opening a browser. `hq` also skips the browser when `HQ_NO_BROWSER=1` is set, on Linux with neither `DISPLAY` nor `WAYLAND_DISPLAY`, and when its output is not a terminal.',
+      },
     ],
     examples: [
       { cmd: 'hq login', description: 'Sign in to HQ. Your browser opens the approval page.' },
       {
         cmd: 'hq login --host https://hq.aiworkforceone.com',
         description: 'Sign in to a specific HQ address.',
+      },
+      {
+        cmd: 'hq login --no-browser',
+        description:
+          'Sign in from a server or a remote shell: open the printed link on any device.',
       },
     ],
     exitCodes: [
@@ -134,7 +153,7 @@ export const CLI_COMMANDS: CliCommand[] = [
     name: 'status',
     usage: ['hq status'],
     summary:
-      'Show who is signed in and every team you can reach, with its `hq-…` name, whether its machine is running, and what you may do there.',
+      'Show who is signed in and every team you can reach, with its `hq-…` name, whether its AI Team Cloud Computer is running, and what you may do there.',
     help: [{ text: 'hq status', summary: 'who you are and the teams you can reach' }],
     flags: [],
     examples: [{ cmd: 'hq status', description: 'List your teams and their `hq-…` names.' }],
@@ -147,16 +166,16 @@ export const CLI_COMMANDS: CliCommand[] = [
     name: 'up',
     usage: ['hq up <team> [--org <slug>]'],
     summary:
-      'Wake a sleeping team machine and wait until it is ready (about 15 seconds, up to 3 minutes).',
-    help: [{ text: 'hq up <team>', summary: 'wake a team machine' }],
+      'Wake a sleeping AI Team Cloud Computer and wait until it is ready (about 15 seconds, up to 3 minutes).',
+    help: [{ text: 'hq up <team>', summary: 'wake an AI Team Cloud Computer' }],
     flags: [ORG_FLAG],
     examples: [{ cmd: 'hq up hq-3f9a1c2e', description: 'Wake the team with this `hq-…` name.' }],
     exitCodes: [
-      { code: 0, meaning: 'The team machine is running.' },
+      { code: 0, meaning: 'The AI Team Cloud Computer is running.' },
       {
         code: 1,
         meaning:
-          'No such team, remote access is off, or the machine did not wake within 3 minutes.',
+          'No such team, remote access is off, or the Cloud Computer did not wake within 3 minutes.',
       },
       { code: 2, meaning: 'No team named.' },
     ],
@@ -215,7 +234,7 @@ export const CLI_COMMANDS: CliCommand[] = [
     name: 'forward',
     usage: ['hq forward <port> [--local <port>] [--team <t>] [--org <slug>]'],
     summary:
-      'Make a port on the team machine reachable at `http://localhost:<port>` on this computer, until you press `Ctrl-C`.',
+      'Make a port on the AI Team Cloud Computer reachable at `http://localhost:<port>` on this computer, until you press `Ctrl-C`.',
     help: [{ text: 'hq forward <port> [--local <port>] [--team <t>]' }],
     flags: [
       {
@@ -235,7 +254,7 @@ export const CLI_COMMANDS: CliCommand[] = [
     examples: [
       {
         cmd: 'hq forward 3000',
-        description: 'Reach port 3000 on the team machine at localhost:3000.',
+        description: 'Reach port 3000 on the AI Team Cloud Computer at localhost:3000.',
       },
       {
         cmd: 'hq forward 5173 --local 8080 --team hq-3f9a1c2e',

@@ -41,7 +41,30 @@ export function isOnHost(url: string, host: string): boolean {
   return !/[\s"'`<>|&^%]/.test(url);
 }
 
-export async function login(ctx: Ctx, opts: { host?: string }): Promise<number> {
+/**
+ * Should `hq login` leave the browser alone and only print the link? Yes with `--no-browser` or
+ * `HQ_NO_BROWSER=1`, and on its own where no browser can show: Linux with neither `DISPLAY` nor
+ * `WAYLAND_DISPLAY` (a server, a container, an SSH session), or a stdout that is not a terminal.
+ */
+export function skipBrowser(ctx: Ctx, noBrowser: boolean): boolean {
+  if (noBrowser || ctx.env.HQ_NO_BROWSER === '1') return true;
+  if (!ctx.stdoutIsTTY) return true;
+  return ctx.platform === 'linux' && !ctx.env.DISPLAY && !ctx.env.WAYLAND_DISPLAY;
+}
+
+/** What to run after signing in: the commands that exist today, then the VS Code extension. */
+const NEXT_STEPS = [
+  'Next:',
+  '  hq status                          see your teams and their hq-… names',
+  '  hq forward <port> --team <team>    reach a port on an AI Team Cloud Computer',
+  '  hq attach <session> --team <team>  join an HQ session in this terminal',
+  'Or use the AI Workforce One HQ extension for VS Code.',
+];
+
+export async function login(
+  ctx: Ctx,
+  opts: { host?: string; noBrowser?: boolean },
+): Promise<number> {
   const state = readState(ctx.env);
   const host = opts.host ? normalizeHost(opts.host) : state.host;
   const key = ensureDeviceKey(ctx.env, `hq@${ctx.hostname()}`);
@@ -69,8 +92,18 @@ export async function login(ctx: Ctx, opts: { host?: string }): Promise<number> 
   // Only a URL on THIS HQ address is opened or printed; anything else falls back to our own page.
   const pageUrl = isOnHost(s.verificationUrl, host) ? s.verificationUrl : `${host}/device`;
   const openUrl = isOnHost(s.verificationUrlComplete, host) ? s.verificationUrlComplete : pageUrl;
-  ctx.out(`Opening ${openUrl}`);
-  ctx.out(`If your browser did not open, go to ${pageUrl} and enter:`);
+  const browser = !skipBrowser(ctx, opts.noBrowser === true);
+  if (browser) {
+    ctx.out(`Opening ${openUrl}`);
+    ctx.out(`If your browser did not open, go to ${pageUrl} and enter:`);
+  } else if (openUrl === pageUrl) {
+    // HQ's link carries no code (it is typed, never prefilled): say the one page once.
+    ctx.out(`Go to ${pageUrl} in a browser and enter:`);
+  } else {
+    ctx.out('Open this link in a browser to sign in:');
+    ctx.out(`    ${openUrl}`);
+    ctx.out(`Or go to ${pageUrl} and enter:`);
+  }
   ctx.out('');
   ctx.out(`    ${s.userCode}`);
   ctx.out('');
@@ -80,7 +113,7 @@ export async function login(ctx: Ctx, opts: { host?: string }): Promise<number> 
   ctx.out(
     `Waiting for approval (code expires in ${Math.round(s.expiresIn / 60)} min, Ctrl-C to cancel)...`,
   );
-  ctx.openUrl(openUrl);
+  if (browser) ctx.openUrl(openUrl);
 
   let interval = Math.max(5, s.interval);
   const deadline = ctx.now() + s.expiresIn * 1000;
@@ -110,6 +143,7 @@ export async function login(ctx: Ctx, opts: { host?: string }): Promise<number> 
       if (approved.orgs.length > 0) {
         ctx.out(`Orgs: ${approved.orgs.map((o) => `${o.name} (${o.slug})`).join(', ')}`);
       }
+      for (const line of NEXT_STEPS) ctx.out(line);
       return 0;
     }
     if (

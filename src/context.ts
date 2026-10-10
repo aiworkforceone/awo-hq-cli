@@ -17,6 +17,8 @@ export interface Ctx {
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   openUrl: (url: string) => void;
+  /** Is stdout a terminal? Not one (a pipe, CI, a script) means nobody is at a browser to approve. */
+  stdoutIsTTY: boolean;
   hostname: () => string;
   platform: NodeJS.Platform;
   arch: string;
@@ -47,6 +49,7 @@ export function defaultCtx(): Ctx {
         /* the URL is printed anyway */
       }
     },
+    stdoutIsTTY: process.stdout.isTTY === true,
     hostname: () => os.hostname().split('.')[0] ?? 'computer',
     platform: process.platform,
     arch: process.arch,

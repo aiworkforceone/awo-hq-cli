@@ -35,7 +35,10 @@ export async function run(argv: string[], ctx: Ctx = defaultCtx()): Promise<numb
     switch (cmd) {
       case 'login': {
         const host = flagString(args, 'host');
-        return await login(ctx, host ? { host } : {});
+        return await login(ctx, {
+          ...(host ? { host } : {}),
+          noBrowser: args.flags.has('no-browser'),
+        });
       }
       case 'logout':
         return await logout(ctx);

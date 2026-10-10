@@ -38,14 +38,15 @@ export function upgradeRefusalMessage(status: number): string {
   if (status === 403) return 'hq: remote access to this team is not allowed for you right now.';
   if (status === 404) return 'hq: remote access is not available on this HQ.';
   if (status === 409)
-    return 'hq: this team machine needs an update before it accepts this connection. An owner or admin can update it in HQ.';
+    return 'hq: this AI Team Cloud Computer needs an update before it accepts this connection. An owner or admin can update it in HQ.';
   if (status === 429)
     return 'hq: too many connection attempts right now. Wait a minute and try again.';
   if (status === 501)
-    return 'hq: connections to team machines are not switched on for this HQ yet. Ask an owner or admin.';
+    return 'hq: connections to AI Team Cloud Computers are not switched on for this HQ yet. Ask an owner or admin.';
   if (status === 503) return 'hq: HQ is restarting. Try again in a moment.';
-  if (status === 504) return 'hq: the team machine did not answer in time. Try again in a moment.';
-  return `hq: the team machine could not be reached (HTTP ${status}).`;
+  if (status === 504)
+    return 'hq: the AI Team Cloud Computer did not answer in time. Try again in a moment.';
+  return `hq: the AI Team Cloud Computer could not be reached (HTTP ${status}).`;
 }
 
 /** The sentence for a close code the tunnel ended with (null = a normal close, say nothing). */
@@ -58,15 +59,15 @@ export function closeMessage(code: number): string | null {
     case REMOTE_CLOSE_UNAUTHORIZED:
       return 'hq: your access to this team ended (revoked, expired, or remote access was turned off).';
     case REMOTE_CLOSE_SSH_KEY_REFUSED:
-      return "hq: the team machine refused this computer's key. Run hq login again.";
+      return "hq: the AI Team Cloud Computer refused this computer's key. Run hq login again.";
     case REMOTE_CLOSE_SSH_CONN_REVOKED:
       return 'hq: this connection was closed from HQ.';
     case REMOTE_CLOSE_SSH_IDLE_SLEEP:
-      return 'hq: the team machine went to sleep.';
+      return 'hq: the AI Team Cloud Computer went to sleep.';
     case REMOTE_CLOSE_SSH_LIFETIME:
       return 'hq: connections end after 12 hours. Connect again to continue.';
     case REMOTE_CLOSE_RUNNER_UNAVAILABLE:
-      return 'hq: the team machine is not available right now.';
+      return 'hq: the AI Team Cloud Computer is not available right now.';
     default:
       return `hq: the connection closed (${code}).`;
   }

@@ -129,7 +129,7 @@ export function remoteClientDisplayName(name: RemoteDeviceClientName | undefined
  * no em dash.
  */
 export function remoteForwardNoticeSentence(teamName: string): string {
-  return `Developer access is on for ${teamName}. Members who can edit it can forward its ports to their own computer, which reaches programs you run on this machine, such as dev servers.`;
+  return `Developer access is on for ${teamName}. Members who can edit it can forward its ports to their own computer, which reaches programs you run on this Cloud Computer, such as dev servers.`;
 }
 
 export interface DeviceStartRequest {
@@ -383,7 +383,7 @@ export const REMOTE_SHIM_ENGINE_UNSUPPORTED_MESSAGE =
  * stubs. Plain words, no em dash.
  */
 export const SSH_REMOVED_MESSAGE =
-  'SSH access to team machines was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.';
+  'SSH access to AI Team Cloud Computers was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.';
 
 /** `<remoteHome>/.hq/current.json` (events.json CurrentConnectionFile). Written by the door. */
 export interface CurrentConnectionFile {
@@ -452,11 +452,11 @@ export interface RemoteConnectionRow {
  * Security). No em dashes; "off", never "asleep".
  */
 export const REMOTE_DEVELOPER_ACCESS_DESCRIPTION =
-  'Members who can edit a team can open its files, join its terminals and forward its ports from their own computer (HQ for VS Code, the hq CLI). Everyone on a team machine shares one system account, so a forwarded port can reach any program listening on that machine.';
+  'Members who can edit a team can open its files, join its terminals and forward its ports from their own computer (HQ for VS Code, the hq CLI). Everyone on an AI Team Cloud Computer shares one system account, so a forwarded port can reach any program listening on that Cloud Computer.';
 
 export const REMOTE_DEVELOPER_ACCESS_CONSENT_PARAGRAPHS: readonly string[] = [
-  'Members who can edit a team will be able to open its files, join its terminals and forward its ports from their own computer, using HQ for VS Code or the hq command line tool. None of this opens a shell on the team machine.',
-  "Everyone on a team machine shares one system account, so a forwarded port can reach any program listening on that machine, including dev servers other members run there. Each team's members are told this once.",
+  'Members who can edit a team will be able to open its files, join its terminals and forward its ports from their own computer, using HQ for VS Code or the hq command line tool. None of this opens a shell on the AI Team Cloud Computer.',
+  "Everyone on an AI Team Cloud Computer shares one system account, so a forwarded port can reach any program listening on that Cloud Computer, including dev servers other members run there. Each team's members are told this once.",
   'Files and terminals keep the permissions they have in HQ: viewers can look but cannot type or save, secrets stay masked, and protected template files stay read-only.',
   'Every connection and every saved file is recorded in your audit log. You can turn this off at any time; open connections close within 30 seconds.',
 ];

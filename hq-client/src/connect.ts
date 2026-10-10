@@ -48,13 +48,14 @@ export function refusalMessage(team: Team, err: unknown): string {
       return `hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
     }
     if (err.code === 'RUNNER_UNAVAILABLE') {
-      return `hq: team "${name}" has no running machine. Open the team in HQ and start a session to start it.`;
+      return `hq: team "${name}" has no running Cloud Computer. Open the team in HQ and start a session to start it.`;
     }
     if (err.code === 'REMOTE_UNSUPPORTED_RUNNER' && err.details?.reason === 'restart_required') {
-      return `hq: team "${name}" must restart its machine before remote access works (remote access was turned on while it was running). An owner or admin can stop and start it from the team page in HQ.`;
+      // Only a port forward meets this (SSH was removed on 2026-10-01; attach does not need it).
+      return `hq: team "${name}" cannot forward ports yet: its AI Team Cloud Computer started before Developer access was turned on. Restart the AI Team Cloud Computer, then try again. An owner or admin presses Restart Cloud Computer in the team's Settings in HQ.`;
     }
     if (err.code === 'REMOTE_UNSUPPORTED_RUNNER') {
-      return `hq: team "${name}" runs an older machine image without remote access. An owner or admin can update it: HQ → ${name} → Settings → Update machine.`;
+      return `hq: team "${name}" runs an older Cloud Computer image without remote access. An owner or admin can update it: HQ → ${name} → Settings → Update Cloud Computer.`;
     }
     if (err.code === 'THROTTLED') {
       return `hq: too many open connections to team "${name}". Close one and try again.`;
