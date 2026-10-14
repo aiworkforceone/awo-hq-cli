@@ -8,6 +8,8 @@ Connect your computer to your AI Team Cloud Computers in AI Workforce One HQ.
 - `hq attach <session>` follows an HQ session in this terminal. Only the session owner can type.
 - `hq forward <port>` makes a port on the AI Team Cloud Computer reachable on `localhost` on this computer.
 - `hq up <team>` wakes an AI Team Cloud Computer.
+- `hq sessions` lists your sessions with their team, state and owner; `hq start`, `hq stop` and
+  `hq restart <session>` start, stop or restart one (the session owner or a team owner only).
 - `hq logout` revokes this computer's access.
 
 Run `hq --help` for the full list. Guides and the full reference are at

@@ -4,6 +4,7 @@
  */
 import { spawn } from 'node:child_process';
 import os from 'node:os';
+import { createInterface } from 'node:readline/promises';
 import { ensureDeviceKey, loadDeviceKey, type DeviceKey } from './device-key.js';
 import { HqClient, type FetchLike } from './api.js';
 import { readState, type HqState } from './state.js';
@@ -22,6 +23,12 @@ export interface Ctx {
   hostname: () => string;
   platform: NodeJS.Platform;
   arch: string;
+  /**
+   * cli-session-lifecycle: ask the person a question at the terminal and resolve with the line they
+   * typed. ABSENT when nobody is there to answer (stdin or stderr is not a terminal: a pipe, CI, a
+   * script), so a command that would ask refuses instead and names its `--yes`.
+   */
+  ask?: (question: string) => Promise<string>;
 }
 
 export function defaultCtx(): Ctx {
@@ -53,6 +60,19 @@ export function defaultCtx(): Ctx {
     hostname: () => os.hostname().split('.')[0] ?? 'computer',
     platform: process.platform,
     arch: process.arch,
+    // The question goes to stderr, so `--json` output on stdout stays one clean document.
+    ...(process.stdin.isTTY === true && process.stderr.isTTY === true
+      ? {
+          ask: async (question: string) => {
+            const rl = createInterface({ input: process.stdin, output: process.stderr });
+            try {
+              return await rl.question(terminalSafe(question));
+            } finally {
+              rl.close();
+            }
+          },
+        }
+      : {}),
   };
 }
 

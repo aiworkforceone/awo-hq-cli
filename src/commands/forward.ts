@@ -17,6 +17,7 @@ import { readState, writeState } from '../state.js';
 import { withTeamAliases, type Team } from '../teams.js';
 import type { WsFactory } from '../tunnel-client.js';
 import { loadTeam } from './up.js';
+import { copy } from '@kpa/shared/active-dev-brand';
 
 export { HEARTBEAT_MS, parsePort, type ForwardHandle } from '@hq/client/forward.js';
 
@@ -45,12 +46,12 @@ export async function forward(
 ): Promise<number> {
   const remotePort = parsePort(opts.port, 1024);
   if (remotePort === null) {
-    ctx.err('hq: the team port must be a number from 1024 to 65535.');
+    ctx.err(copy`hq: the team port must be a number from 1024 to 65535.`);
     return 2;
   }
   const localPort = opts.local === undefined ? remotePort : parsePort(opts.local, 1);
   if (localPort === null) {
-    ctx.err('hq: --local must be a port number.');
+    ctx.err(copy`hq: --local must be a port number.`);
     return 2;
   }
   try {
@@ -86,7 +87,7 @@ async function loadTeamForForward(
   if (candidates.length === 1) return { team: candidates[0]!, client };
   throw new Error(
     candidates.length === 0
-      ? 'hq: no team lets you forward ports. Run hq status to see your teams.'
-      : 'hq: more than one team can forward ports. Name one with --team <hq-name>.',
+      ? copy`hq: no team lets you forward ports. Run hq status to see your teams.`
+      : copy`hq: more than one team can forward ports. Name one with --team <hq-name>.`,
   );
 }

@@ -18,12 +18,16 @@ import {
   toOpenSshPrivateKey,
   type DeviceKey,
 } from '@hq/client/device-key.js';
+import { ACTIVE_DEV_BRAND } from '@kpa/shared/active-dev-brand';
 import { hqPaths } from './paths.js';
 
 export * from '@hq/client/device-key.js';
 
 /** Load the device key, creating it (0600, in a 0700 dir) when absent. */
-export function ensureDeviceKey(env: NodeJS.ProcessEnv = process.env, comment = 'hq'): DeviceKey {
+export function ensureDeviceKey(
+  env: NodeJS.ProcessEnv = process.env,
+  comment = ACTIVE_DEV_BRAND.cli.command,
+): DeviceKey {
   const paths = hqPaths(env);
   if (existsSync(paths.privateKey)) return loadDeviceKey(env);
   mkdirSync(paths.keysDir, { recursive: true, mode: 0o700 });

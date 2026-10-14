@@ -8,6 +8,7 @@
  * (`RemoteSessionSummary.localEchoAvailable`, Decision 18).
  */
 import type { LocalEchoMode } from '@kpa/shared/local-echo-engine';
+import { copy } from '@kpa/shared/active-dev-brand';
 
 export type { LocalEchoMode };
 
@@ -22,7 +23,7 @@ export function resolveLocalEchoMode(
     const v = flag.trim().toLowerCase();
     return MODES.has(v)
       ? { mode: v as LocalEchoMode }
-      : { error: 'hq: --local-echo takes auto, always or off.' };
+      : { error: copy`hq: --local-echo takes auto, always or off.` };
   }
   const v = (env ?? '').trim().toLowerCase();
   if (MODES.has(v)) return { mode: v as LocalEchoMode };

@@ -8,9 +8,10 @@ export interface ParsedArgs {
  * Flags that never take a value as a SEPARATE token (`--flag=value` still works). `local-echo` is
  * here so `hq attach --local-echo mysession` keeps `mysession` as the session (feature `local-echo`,
  * Decision 16); its mode, when given, is `--local-echo=<auto|always|off>`. `no-browser` is a plain
- * switch, so `hq login --no-browser --host <url>` keeps its host.
+ * switch, so `hq login --no-browser --host <url>` keeps its host. `yes` and `json`
+ * (cli-session-lifecycle) are switches too, so `hq stop --yes mysession` keeps its session.
  */
-const BOOLEAN_FLAGS = new Set(['help', 'version', 'local-echo', 'no-browser']);
+const BOOLEAN_FLAGS = new Set(['help', 'version', 'local-echo', 'no-browser', 'yes', 'json']);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];

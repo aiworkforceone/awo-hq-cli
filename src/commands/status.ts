@@ -3,6 +3,7 @@ import type { RemoteAccessDeniedReason, RemoteOrg } from '@kpa/shared/remote.typ
 import { clientFor, type Ctx } from '../context.js';
 import { readState, writeState } from '../state.js';
 import { withTeamAliases } from '../teams.js';
+import { copy } from '@kpa/shared/active-dev-brand';
 
 export async function status(ctx: Ctx): Promise<number> {
   const state = readState(ctx.env);
@@ -15,14 +16,17 @@ export async function status(ctx: Ctx): Promise<number> {
   for (const t of withTeamAliases(orgs)) {
     // Ticket (v): the label follows what the server said. A refusal names its reason, and a team
     // with no running machine is never "ready" (a connect cannot start one; a session in HQ does).
+    // Train 99 e2e: an org outside the staged rollout never turned anything off; say it plainly.
     const note = !t.org.remoteAccess.allowed
-      ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}`
+      ? t.org.remoteAccess.reason === 'staged_rollout'
+        ? "Remote access isn't available for this organization yet."
+        : `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}`
       : !t.workspace.supported
         ? 'Cloud Computer update pending'
         : !t.workspace.rights.forward && !t.workspace.rights.attach
           ? 'no access'
           : t.workspace.state === 'stopped'
-            ? 'no running Cloud Computer, start a session in HQ first'
+            ? copy`no running Cloud Computer, start a session in HQ first`
             : t.workspace.rights.forward
               ? 'remote access ready'
               : 'attach only';
@@ -47,13 +51,11 @@ export async function status(ctx: Ctx): Promise<number> {
 function deniedReasonText(reason: RemoteAccessDeniedReason | undefined): string {
   switch (reason) {
     case 'two_factor_required':
-      return 'two-step verification needed (run hq login again)';
+      return copy`two-step verification needed (run hq login again)`;
     case 'plan_inactive':
       return 'the plan is not active';
     case 'feature_not_in_plan':
       return 'not included in this plan';
-    case 'staged_rollout':
-      return 'not available to this org yet';
     case 'advanced_terminal_off':
       return 'the advanced terminal is off for this org';
     default:

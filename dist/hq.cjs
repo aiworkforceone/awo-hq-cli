@@ -8764,6 +8764,73 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 
+// shared/src/dev-brands/awo.ts
+var DEV_BRAND = Object.freeze({
+  id: "awo",
+  productName: "HQ",
+  displayName: "AI Workforce One HQ",
+  defaultHost: "https://hq.aiworkforceone.com",
+  builtInHosts: ["https://hq.aiworkforceone.com", "https://hq-test.aiworkforceone.com"],
+  builtInHostParents: [],
+  reservedHostLabels: [],
+  hostExample: "https://hq.aiworkforceone.com",
+  teamAliasPrefix: "hq",
+  apiBaseUrl: "https://api-hq.aiworkforceone.com",
+  apiDocsBase: "https://hq.aiworkforceone.com/docs/api",
+  cli: {
+    command: "hq",
+    packageName: "@aiworkforceoneofficial/hq",
+    description: "Connect your computer to your AI Team Cloud Computers in AI Workforce One HQ: attach and port forwarding.",
+    envPrefix: "HQ",
+    homeDirName: ".hq",
+    keychainService: "hq.aiworkforceone",
+    bundleFile: "hq.cjs",
+    repository: "aiworkforceone/awo-hq-cli",
+    legacySshConfig: "~/.ssh/hq_config"
+  },
+  sdk: { npm: "@aiworkforceoneofficial/hq-sdk", pypi: "aiworkforceone-hq" },
+  vscode: {
+    publisher: "aiworkforceone",
+    name: "awo-hq",
+    displayName: "AI Workforce One HQ",
+    description: "Your AI Workforce One HQ teams inside VS Code: join their session terminals and forward their ports, without SSH.",
+    idPrefix: "hq",
+    authProviderId: "aiworkforceone-hq",
+    fsScheme: "hq",
+    repository: "aiworkforceone/awo-hq-vscode"
+  }
+});
+
+// shared/src/dev-brand-copy.ts
+var COPY_SOURCE = Object.freeze({
+  displayName: "AI Workforce One HQ",
+  hostExample: "https://hq.aiworkforceone.com",
+  homeDir: "~/.hq"
+});
+function rebrandCopy(brand, text) {
+  if (brand.id === "awo") return text;
+  return text.split(COPY_SOURCE.displayName).join(brand.displayName).split(COPY_SOURCE.hostExample).join(brand.hostExample).replace(/~\/\.hq(?![\w-])/g, `~/${brand.cli.homeDirName}`).replace(/(?<![\w.-])HQ_(?=[A-Z])/g, `${brand.cli.envPrefix}_`).replace(/(?<![\w.-])hq-(?=…|[0-9a-f]{8}|name>)/g, `${brand.teamAliasPrefix}-`).replace(/(?<![\w./-])hq:\/\//g, `${brand.vscode.fsScheme}://`).replace(/(?<![\w./-])hq\.(?=[a-z])/g, `${brand.vscode.idPrefix}.`).replace(/(?<=[a-z])Hq(?=[A-Z])/g, brand.productName.replace(/[^A-Za-z0-9]/g, "")).replace(/(?<![\w./-])hq(?![\w-])/g, brand.cli.command).replace(
+    /(?<![\w-])([Aa])n HQ(?![\w-])/g,
+    (_m, a) => /^[aeiou]/i.test(brand.productName) ? `${a}n ${brand.productName}` : `${a} ${brand.productName}`
+  ).replace(/(?<![\w-])HQ(?![\w-])/g, brand.productName);
+}
+function brandCopyTag(brand) {
+  return (strings, ...values) => {
+    let out = rebrandCopy(brand, strings[0] ?? "");
+    for (let i = 0; i < values.length; i++) {
+      out += String(values[i]) + rebrandCopy(brand, strings[i + 1] ?? "");
+    }
+    return out;
+  };
+}
+
+// shared/src/active-dev-brand.ts
+var ACTIVE_DEV_BRAND = DEV_BRAND;
+var copy = brandCopyTag(ACTIVE_DEV_BRAND);
+function brandText(text) {
+  return rebrandCopy(ACTIVE_DEV_BRAND, text);
+}
+
 // shared/src/remote.types.ts
 var REMOTE_ACCESS_TTL_SEC = 15 * 60;
 var REMOTE_REFRESH_IDLE_TTL_SEC = 30 * 24 * 60 * 60;
@@ -8781,9 +8848,42 @@ ${method.toUpperCase()}
 ${path3}
 ${bodySha256Hex.toLowerCase()}`;
 }
-var SSH_REMOVED_MESSAGE = "SSH access to AI Team Cloud Computers was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code.";
-function workspaceAlias(workspaceId, hexChars = 8) {
-  return `hq-${workspaceId.replace(/-/g, "").slice(0, hexChars).toLowerCase()}`;
+var SSH_REMOVED_MESSAGE = brandText(
+  "SSH access to AI Team Cloud Computers was removed on 2026-10-01. Use a terminal session in HQ, `hq attach <session> --team <team>`, `hq forward <port> --team <team>`, or the AI Workforce One HQ extension for VS Code."
+);
+function workspaceAlias(workspaceId, hexChars = 8, prefix = "hq") {
+  return `${prefix}-${workspaceId.replace(/-/g, "").slice(0, hexChars).toLowerCase()}`;
+}
+var WAKE_ESTIMATE_DEFAULT = Object.freeze({
+  minSeconds: 15,
+  maxSeconds: 30
+});
+var WAKE_ESTIMATE_LARGE = Object.freeze({
+  minSeconds: 30,
+  maxSeconds: 45
+});
+var MAX_WAKE_SECONDS = 180;
+function normalizeWakeEstimate(value) {
+  return isSaneWakeEstimate(value) ? { minSeconds: value.minSeconds, maxSeconds: value.maxSeconds } : WAKE_ESTIMATE_DEFAULT;
+}
+function isSaneWakeEstimate(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const { minSeconds, maxSeconds } = value;
+  return typeof minSeconds === "number" && typeof maxSeconds === "number" && Number.isInteger(minSeconds) && Number.isInteger(maxSeconds) && minSeconds > 0 && maxSeconds > minSeconds && maxSeconds <= MAX_WAKE_SECONDS;
+}
+function wakeRangeText(estimate) {
+  const e = normalizeWakeEstimate(estimate);
+  return `${e.minSeconds}-${e.maxSeconds} seconds`;
+}
+function wakeStillWorkingAfterMs(estimate) {
+  return normalizeWakeEstimate(estimate).maxSeconds * 1e3;
+}
+function wakeEstimateInSentence(sentence) {
+  const m = typeof sentence === "string" ? /\b(\d{1,3})-(\d{1,3}) seconds\b/.exec(sentence) : null;
+  return m ? normalizeWakeEstimate({ minSeconds: Number(m[1]), maxSeconds: Number(m[2]) }) : WAKE_ESTIMATE_DEFAULT;
+}
+function wakeEstimateOf(field, sentence) {
+  return isSaneWakeEstimate(field) ? normalizeWakeEstimate(field) : wakeEstimateInSentence(sentence);
 }
 
 // hq-client/src/api.ts
@@ -8976,6 +9076,104 @@ async function acquireFileLock(file, opts = {}) {
   }
 }
 
+// hq-client/src/session-actions.ts
+var SESSION_NOT_OPERATOR_MESSAGE = "Only the session owner or a team owner can do this.";
+var DEVICE_SIGNATURE_MISSING_CODE = "DEVICE_SIGNATURE_MISSING";
+function deviceSignatureMissingMessage() {
+  return copy`HQ refused this request because it was not signed by this computer. That is a bug in this app, not an expired login, so signing in again will not help. Update the app and try again.`;
+}
+function throttledMessage(details) {
+  const raw = details?.retryAfterSeconds;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return "Too many requests. Wait a moment and try again.";
+  }
+  const seconds = Math.ceil(raw);
+  return `Too many requests. Try again in ${seconds} ${seconds === 1 ? "second" : "seconds"}.`;
+}
+function teamApiPath(team) {
+  return `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}`;
+}
+function sessionActionPath(team, sessionId, action) {
+  return `${teamApiPath(team)}/sessions/${encodeURIComponent(sessionId)}/${action}`;
+}
+function isApiError(err) {
+  return err instanceof Error && typeof err.status === "number" && "code" in err && "details" in err;
+}
+function describeSessionRefusal(err, action, names) {
+  if (!isApiError(err)) {
+    return { kind: "other", message: err instanceof Error ? err.message : String(err) };
+  }
+  const { status: status2, code } = err;
+  if (status2 === 403 && (code === "SESSION_NOT_OPERATOR" || code === "FORBIDDEN")) {
+    return { kind: "not_operator", message: SESSION_NOT_OPERATOR_MESSAGE };
+  }
+  if (status2 === 403 && code === "SESSION_NOT_OWNER") {
+    return { kind: "not_operator", message: SESSION_NOT_OPERATOR_MESSAGE };
+  }
+  if (status2 === 403 && code === "PERMISSION_DENIED") {
+    return {
+      kind: "no_access",
+      message: copy`You do not have remote access to team "${names.team}".`
+    };
+  }
+  if (status2 === 401 && code === DEVICE_SIGNATURE_MISSING_CODE) {
+    return { kind: "client_bug", message: deviceSignatureMissingMessage() };
+  }
+  if (status2 === 429) {
+    return { kind: "throttled", message: throttledMessage(err.details) };
+  }
+  if (status2 === 401) {
+    return {
+      kind: "signed_out",
+      message: copy`Your HQ login on this computer expired or was revoked. Sign in again.`
+    };
+  }
+  if (status2 === 404) {
+    if (/session not found/i.test(err.message)) {
+      return {
+        kind: "not_found",
+        message: `Session "${names.session}" was not found. It may have been deleted.`
+      };
+    }
+    return {
+      kind: "unsupported",
+      message: copy`This HQ cannot start or stop sessions from here yet. Use HQ in your browser.`
+    };
+  }
+  if (status2 === 402) {
+    return {
+      kind: "plan_inactive",
+      message: copy`This organization's plan is not active, so its sessions cannot be started or stopped. An owner can fix billing in HQ.`
+    };
+  }
+  if (status2 === 409 && code === "ALREADY_RUNNING" && action !== "stop") {
+    return { kind: "already", message: `Session "${names.session}" is already running.` };
+  }
+  if (status2 === 409 && code === "NOT_RUNNING" && action === "stop") {
+    return { kind: "already", message: `Session "${names.session}" is already stopped.` };
+  }
+  if (status2 === 409 && code === "LIMIT_EXCEEDED") {
+    const reason = typeof err.details?.reason === "string" ? ` (${err.details.reason})` : "";
+    return {
+      kind: "limit",
+      message: copy`Team "${names.team}" is running as many sessions as it can${reason}. Stop one of its sessions first, or give the team more room in HQ.`
+    };
+  }
+  if (status2 === 409 && code === "WORKSPACE_PAUSED") {
+    return {
+      kind: "paused",
+      message: copy`Team "${names.team}" is paused. An owner can resume it in HQ.`
+    };
+  }
+  if (status2 === 409 && code === "WORKSPACE_UPDATING") {
+    return {
+      kind: "updating",
+      message: `Team "${names.team}" is updating its AI Team Cloud Computer. Try again in a few minutes.`
+    };
+  }
+  return { kind: "other", message: err.message };
+}
+
 // hq-client/src/api.ts
 var HqApiError = class extends Error {
   constructor(status2, code, message, details) {
@@ -8983,14 +9181,14 @@ var HqApiError = class extends Error {
     this.status = status2;
     this.code = code;
     this.details = details;
-    this.name = "HqApiError";
+    this.name = "ApiError";
   }
   status;
   code;
   details;
 };
 var NotLoggedInError = class extends Error {
-  constructor(message = "hq: you are not logged in on this computer. Run hq login.") {
+  constructor(message = copy`hq: you are not logged in on this computer. Run hq login.`) {
     super(message);
     this.name = "NotLoggedInError";
   }
@@ -9002,7 +9200,7 @@ var RefreshBusyError = class extends Error {
   }
 };
 var RefreshNeedsRenewingError = class extends Error {
-  constructor(message = "hq: your HQ login on this computer needs renewing. Run hq login.") {
+  constructor(message = copy`hq: your HQ login on this computer needs renewing. Run hq login.`) {
     super(message);
     this.name = "RefreshNeedsRenewingError";
   }
@@ -9290,6 +9488,34 @@ var HqClient = class {
     }
     return res;
   }
+  // ── sessions (cli-session-lifecycle) ─────────────────────────────────────────────────────────
+  // The bearer twins of the web's session lifecycle routes (`session-actions.ts`). Reads are
+  // unsigned; every state change is device-signed. Refusals throw `HqApiError` (status + code);
+  // `describeSessionRefusal` turns one into the sentence both clients print.
+  /** The sessions of one team this member may see, with `canOperate` and `midTurn`. */
+  async listSessions(team) {
+    return (await this.request("GET", `${teamApiPath(team)}/sessions`, {
+      org: team.org.slug
+    })).body;
+  }
+  /** Start a stopped session (202 `starting`); a sleeping team wakes for it, as on the web. */
+  async startSession(team, sessionId, size) {
+    return this.sessionAction(team, sessionId, "start", size);
+  }
+  async stopSession(team, sessionId) {
+    return this.sessionAction(team, sessionId, "stop");
+  }
+  /** Restart: resumes the conversation unless `fresh` (a blank chat), as on the web. */
+  async restartSession(team, sessionId, opts = {}) {
+    return this.sessionAction(team, sessionId, "restart", opts.fresh ? { fresh: true } : void 0);
+  }
+  async sessionAction(team, sessionId, action, body) {
+    return (await this.request(
+      "POST",
+      sessionActionPath(team, sessionId, action),
+      { ...body !== void 0 ? { body } : {}, org: team.org.slug, signed: true }
+    )).body;
+  }
   /**
    * Is this login really gone (security review B1)? Only an UNSIGNED `GET /api/remote/orgs` that
    * answers 401 (or a refresh HQ refuses with 401, or no stored login) says so: a signed call's 401
@@ -9309,7 +9535,7 @@ var HqClient = class {
       body = await res.json();
     } catch {
     }
-    const message = typeof body.error === "string" ? body.error : `HQ answered ${res.status}`;
+    const message = typeof body.error === "string" ? body.error : copy`HQ answered ${res.status}`;
     return new HqApiError(
       res.status,
       typeof body.code === "string" ? body.code : void 0,
@@ -9340,12 +9566,22 @@ var import_node_fs3 = require("node:fs");
 // cli/src/paths.ts
 var import_node_os = __toESM(require("node:os"), 1);
 var import_node_path2 = __toESM(require("node:path"), 1);
-function hqHome(env = process.env) {
-  const override = env.HQ_HOME;
-  return typeof override === "string" && override.length > 0 ? override : import_node_path2.default.join(import_node_os.default.homedir(), ".hq");
+
+// shared/src/dev-brand-core.ts
+function devBrandEnvName(brand, suffix) {
+  return `${brand.cli.envPrefix}_${suffix}`;
 }
-var hqPaths = (env = process.env) => {
-  const home = hqHome(env);
+function devBrandEnv(brand, env, suffix) {
+  return env[devBrandEnvName(brand, suffix)];
+}
+
+// cli/src/paths.ts
+function hqHome(env = process.env, brand = ACTIVE_DEV_BRAND) {
+  const override = devBrandEnv(brand, env, "HOME");
+  return typeof override === "string" && override.length > 0 ? override : import_node_path2.default.join(import_node_os.default.homedir(), brand.cli.homeDirName);
+}
+var hqPaths = (env = process.env, brand = ACTIVE_DEV_BRAND) => {
+  const home = hqHome(env, brand);
   return {
     home,
     keysDir: import_node_path2.default.join(home, "keys"),
@@ -9357,7 +9593,8 @@ var hqPaths = (env = process.env) => {
 };
 
 // cli/src/keychain.ts
-var SERVICE = "hq.aiworkforceone";
+var SERVICE = ACTIVE_DEV_BRAND.cli.keychainService;
+var keychainEnv = (env, suffix = "KEYCHAIN") => devBrandEnv(ACTIVE_DEV_BRAND, env, suffix);
 function hasTool(cmd) {
   try {
     (0, import_node_child_process.execFileSync)(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" });
@@ -9367,20 +9604,24 @@ function hasTool(cmd) {
   }
 }
 function keychainBackend(env = process.env) {
-  if (env.HQ_KEYCHAIN === "file") return "file";
-  if (env.HQ_KEYCHAIN === "libsecret") return "libsecret";
-  if (process.platform === "darwin" && (env.HQ_KEYCHAIN_MACOS_FILE || hasTool("security"))) {
+  if (keychainEnv(env) === "file") return "file";
+  if (keychainEnv(env) === "libsecret") return "libsecret";
+  if (process.platform === "darwin" && (keychainEnv(env, "KEYCHAIN_MACOS_FILE") || hasTool("security"))) {
     return "macos";
   }
   if (process.platform === "linux" && hasTool("secret-tool")) return "libsecret";
   return "file";
 }
+function credentialsShown(env) {
+  return devBrandEnv(ACTIVE_DEV_BRAND, env, "HOME") ? hqPaths(env).credentials : copy`~/.hq/credentials.json`;
+}
 var warned = false;
-function warnFile(reason = "no-tool") {
+function warnFile(env, reason = "no-tool") {
   if (warned) return;
   warned = true;
+  const where = credentialsShown(env);
   process.stderr.write(
-    reason === "no-service" ? "hq: the system keychain is not answering (no Secret Service running), so your login is stored in ~/.hq/credentials.json (readable only by you).\n" : "hq: no system keychain tool found, so your login is stored in ~/.hq/credentials.json (readable only by you).\n"
+    reason === "no-service" ? copy`hq: the system keychain is not answering (no Secret Service running), so your login is stored in ${where} (readable only by you).\n` : copy`hq: no system keychain tool found, so your login is stored in ${where} (readable only by you).\n`
   );
 }
 function readFileStore(env) {
@@ -9427,7 +9668,7 @@ function securityArg(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 function macosKeychainArgs(env) {
-  const file = env.HQ_KEYCHAIN_MACOS_FILE;
+  const file = keychainEnv(env, "KEYCHAIN_MACOS_FILE");
   return typeof file === "string" && file.length > 0 ? [file] : [];
 }
 function saveTokens(host, tokens, env = process.env) {
@@ -9446,7 +9687,7 @@ function saveTokens(host, tokens, env = process.env) {
     try {
       (0, import_node_child_process.execFileSync)(
         "secret-tool",
-        ["store", "--label=hq login", "service", SERVICE, "account", host],
+        ["store", copy`--label=hq login`, "service", SERVICE, "account", host],
         {
           input: secret,
           stdio: ["pipe", "ignore", "ignore"]
@@ -9454,10 +9695,10 @@ function saveTokens(host, tokens, env = process.env) {
       );
       return;
     } catch {
-      warnFile("no-service");
+      warnFile(env, "no-service");
     }
   } else {
-    warnFile();
+    warnFile(env);
   }
   const data = readFileStore(env);
   data[host] = tokens;
@@ -9521,7 +9762,7 @@ function deleteTokens(host, env = process.env) {
 }
 
 // cli/src/version.ts
-var HQ_VERSION = "0.2.1".length > 0 ? "0.2.1" : "0.0.0-dev";
+var HQ_VERSION = "0.3.0".length > 0 ? "0.3.0" : "0.0.0-dev";
 
 // cli/src/api.ts
 var CLI_CLIENT_HEADERS = {
@@ -9551,7 +9792,7 @@ function postJson2(fetchFn, url, body) {
 }
 
 // cli/src/args.ts
-var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["help", "version", "local-echo", "no-browser"]);
+var BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["help", "version", "local-echo", "no-browser", "yes", "json"]);
 function parseArgs(argv) {
   const positionals = [];
   const flags = /* @__PURE__ */ new Map();
@@ -9655,7 +9896,7 @@ var ConnectRefusedError = class extends Error {
 var WAKE_TIMEOUT_MS = 17e4;
 var WAKE_POLL_MS = 2e3;
 function wakeTimeoutMessage(team) {
-  return `hq: team "${team.workspace.name}" did not wake within 3 minutes. Check it in HQ and try again.`;
+  return copy`hq: team "${team.workspace.name}" did not wake within 3 minutes. Check it in HQ and try again.`;
 }
 function connectionsPath(team, id) {
   const base = `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}/connections`;
@@ -9665,31 +9906,36 @@ function refusalMessage(team, err) {
   const name = team.workspace.name;
   if (err instanceof HqApiError) {
     if (err.code === "RUNNER_UNAVAILABLE" && err.details?.hint === "reconnect") {
-      return `hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
+      return copy`hq: team "${name}" is asleep and this looks like an editor reconnect, so it was not woken. Run \`hq up ${team.alias}\` or open HQ to wake it.`;
     }
     if (err.code === "RUNNER_UNAVAILABLE") {
-      return `hq: team "${name}" has no running Cloud Computer. Open the team in HQ and start a session to start it.`;
+      return copy`hq: team "${name}" has no running Cloud Computer. Open the team in HQ and start a session to start it.`;
     }
     if (err.code === "REMOTE_UNSUPPORTED_RUNNER" && err.details?.reason === "restart_required") {
-      return `hq: team "${name}" cannot forward ports yet: its AI Team Cloud Computer started before Developer access was turned on. Restart the AI Team Cloud Computer, then try again. An owner or admin presses Restart Cloud Computer in the team's Settings in HQ.`;
+      return copy`hq: team "${name}" cannot forward ports yet: its AI Team Cloud Computer started before Developer access was turned on. Restart the AI Team Cloud Computer, then try again. An owner or admin presses Restart Cloud Computer in the team's Settings in HQ.`;
     }
     if (err.code === "REMOTE_UNSUPPORTED_RUNNER") {
-      return `hq: team "${name}" runs an older Cloud Computer image without remote access. An owner or admin can update it: HQ \u2192 ${name} \u2192 Settings \u2192 Update Cloud Computer.`;
+      return copy`hq: team "${name}" runs an older Cloud Computer image without remote access. An owner or admin can update it: HQ → ${name} → Settings → Update Cloud Computer.`;
     }
     if (err.code === "THROTTLED") {
-      return `hq: too many open connections to team "${name}". Close one and try again.`;
+      return copy`hq: too many open connections to team "${name}". Close one and try again.`;
     }
-    if (err.code === "UPGRADE_REQUIRED") return `hq: ${err.message}`;
+    if (err.code === "UPGRADE_REQUIRED") return copy`hq: ${err.message}`;
+    if (err.code === DEVICE_SIGNATURE_MISSING_CODE)
+      return copy`hq: ${deviceSignatureMissingMessage()}`;
     if (err.code === "REMOTE_TOKEN_INVALID")
-      return "hq: your HQ login on this computer expired or was revoked. Run hq login.";
+      return copy`hq: your HQ login on this computer expired or was revoked. Run hq login.`;
     if (err.code === "FEATURE_NOT_AVAILABLE")
-      return `hq: remote access is not available for ${team.org.name} yet.`;
-    if (err.status === 403) return `hq: you do not have remote access to team "${name}".`;
+      return copy`hq: remote access is not available for ${team.org.name} yet.`;
+    if (err.status === 403) return copy`hq: you do not have remote access to team "${name}".`;
     if (err.status === 404)
-      return `hq: team "${name}" was not found. Run hq status to refresh your teams.`;
-    return `hq: ${err.message}`;
+      return copy`hq: team "${name}" was not found. Run hq status to refresh your teams.`;
+    return copy`hq: ${err.message}`;
   }
-  return `hq: ${err.message}`;
+  return copy`hq: ${err.message}`;
+}
+function wakingTeamLine(team) {
+  return copy`hq: waking team "${team.workspace.name}", this usually takes ${wakeRangeText(team.workspace.wakeEstimate)}...`;
 }
 async function openConnection(client, team, req, deps) {
   let first;
@@ -9712,7 +9958,7 @@ async function openConnection(client, team, req, deps) {
   if (first.body.state === "ready") return first.body;
   const id = first.body.id;
   deps.say(
-    first.body.code === "SESSION_RESUME_COLD_RESTART" ? `hq: starting team "${team.workspace.name}" fresh (about 60 s)...` : `hq: waking team "${team.workspace.name}" (about 15 s)...`
+    first.body.code === "SESSION_RESUME_COLD_RESTART" ? copy`hq: starting team "${team.workspace.name}" fresh (about 60 s)...` : wakingTeamLine(team)
   );
   const deadline = deps.now() + WAKE_TIMEOUT_MS;
   while (deps.now() < deadline) {
@@ -9759,19 +10005,19 @@ var TunnelRefusedError = class extends Error {
 };
 function upgradeRefusalMessage(status2) {
   if (status2 === 401)
-    return "hq: this connection was refused. Your login may have expired: run hq login.";
-  if (status2 === 403) return "hq: remote access to this team is not allowed for you right now.";
-  if (status2 === 404) return "hq: remote access is not available on this HQ.";
+    return copy`hq: this connection was refused. Your login may have expired: run hq login.`;
+  if (status2 === 403) return copy`hq: remote access to this team is not allowed for you right now.`;
+  if (status2 === 404) return copy`hq: remote access is not available on this HQ.`;
   if (status2 === 409)
-    return "hq: this AI Team Cloud Computer needs an update before it accepts this connection. An owner or admin can update it in HQ.";
+    return copy`hq: this AI Team Cloud Computer needs an update before it accepts this connection. An owner or admin can update it in HQ.`;
   if (status2 === 429)
-    return "hq: too many connection attempts right now. Wait a minute and try again.";
+    return copy`hq: too many connection attempts right now. Wait a minute and try again.`;
   if (status2 === 501)
-    return "hq: connections to AI Team Cloud Computers are not switched on for this HQ yet. Ask an owner or admin.";
-  if (status2 === 503) return "hq: HQ is restarting. Try again in a moment.";
+    return copy`hq: connections to AI Team Cloud Computers are not switched on for this HQ yet. Ask an owner or admin.`;
+  if (status2 === 503) return copy`hq: HQ is restarting. Try again in a moment.`;
   if (status2 === 504)
-    return "hq: the AI Team Cloud Computer did not answer in time. Try again in a moment.";
-  return `hq: the AI Team Cloud Computer could not be reached (HTTP ${status2}).`;
+    return copy`hq: the AI Team Cloud Computer did not answer in time. Try again in a moment.`;
+  return copy`hq: the AI Team Cloud Computer could not be reached (HTTP ${status2}).`;
 }
 var defaultWs = (url, headers) => new wrapper_default(url, { headers, perMessageDeflate: false });
 async function openTunnelSocket(client, org, connectCode, factory = defaultWs) {
@@ -9793,7 +10039,7 @@ async function openTunnelSocket(client, org, connectCode, factory = defaultWs) {
     });
     ws.once(
       "error",
-      (err) => reject(new TunnelRefusedError(0, `hq: could not reach HQ (${err.message}).`))
+      (err) => reject(new TunnelRefusedError(0, copy`hq: could not reach HQ (${err.message}).`))
     );
   });
 }
@@ -9851,9 +10097,8 @@ function pipeTunnel(ws, input, output, highWater = 1 << 20) {
 // hq-client/src/attach-session.ts
 var TOKEN_CHECK_MS = 6e4;
 var PRESENCE_MS = 6e4;
-var WAKE_RETRY_MS = 2e3;
-var WAKE_RETRY_MAX_MS = 4e3;
-var WAKE_STILL_ON_IT_MS = 2e4;
+var WAKE_RETRY_MS = 1e3;
+var WAKE_RETRY_MAX_MS = 1e3;
 var HISTORY_NOTICE_GRACE_MS = 8e3;
 var HISTORY_UNAVAILABLE_NOTICE = "history_unavailable";
 var WORKSPACE_ASLEEP_NOTICE = "workspace_asleep";
@@ -9883,15 +10128,15 @@ var WAKE_CODES = /* @__PURE__ */ new Set([
   "SESSION_RESUME_COLD_RESTART"
 ]);
 var CLI_ATTACH_COPY = {
-  prefix: "hq: ",
-  stillOnIt: "hq: Still on it...",
+  prefix: copy`hq: `,
+  stillOnIt: copy`hq: Taking longer than usual, still working.`,
   wakeTimeout: wakeTimeoutMessage,
-  reconnecting: "hq: connection lost, reconnecting...",
-  accessEnded: "hq: your access to this session ended.",
-  detached: "hq: detached.",
-  nowViewOnly: "hq: you can watch this session but not type in it.",
-  sessionStopped: "hq: the session stopped.",
-  sessionError: "hq: the session exited with an error."
+  reconnecting: copy`hq: connection lost, reconnecting...`,
+  accessEnded: copy`hq: your access to this session ended.`,
+  detached: copy`hq: detached.`,
+  nowViewOnly: copy`hq: you can watch this session but not type in it.`,
+  sessionStopped: copy`hq: the session stopped.`,
+  sessionError: copy`hq: the session exited with an error.`
 };
 var ACCOUNT_ERROR_NAMES = /* @__PURE__ */ new Set([
   "NeedsSignInError",
@@ -9917,11 +10162,18 @@ function cleanPorts(value) {
 }
 function createAttachSession(client, target, sink, opts = {}) {
   const { team, session } = target;
-  const copy = { ...CLI_ATTACH_COPY, ...opts.copy ?? {} };
+  const attachCopy = { ...CLI_ATTACH_COPY, ...opts.copy ?? {} };
   const make = opts.wsFactory ?? ((url, h) => new wrapper_default(url, { headers: h }));
   const reconnectBase = opts.reconnectBaseMs ?? RECONNECT_BASE_MS;
   const echo = opts.echo ?? null;
-  const wake2 = { since: null, said: null, cold: false, stillSaid: false, asleep: false };
+  const wake2 = {
+    since: null,
+    said: null,
+    estimate: null,
+    cold: false,
+    stillSaid: false,
+    asleep: false
+  };
   let canType = session.canType;
   let current = null;
   let detachRequested = false;
@@ -9952,8 +10204,9 @@ function createAttachSession(client, target, sink, opts = {}) {
     }
     async function runLoop() {
       for (; ; ) {
-        if (detachRequested) return { kind: "ended", exitCode: 0, message: `\r
-${copy.detached}` };
+        if (detachRequested)
+          return { kind: "ended", exitCode: 0, message: `\r
+${attachCopy.detached}` };
         const adopt = next;
         next = null;
         let headers;
@@ -10023,12 +10276,12 @@ ${copy.detached}` };
             lostNotice = setTimeout(() => {
               lostNotice = null;
               sink.say(`\r
-${copy.reconnecting}`);
+${attachCopy.reconnecting}`);
             }, opts.quietReconnectNoticeMs ?? QUIET_RECONNECT_NOTICE_MS);
           } else {
             cancelLostNotice();
             sink.say(`\r
-${copy.reconnecting}`);
+${attachCopy.reconnecting}`);
           }
           await sleep2(Math.min(RECONNECT_MAX_MS, reconnectBase * 2 ** reconnects));
           reconnects += 1;
@@ -10151,16 +10404,16 @@ ${copy.reconnecting}`);
               if (wake2.since === null || wake2.cold || wake2.stillSaid) return;
               wake2.stillSaid = true;
               say(`\r
-${copy.stillOnIt}`);
+${attachCopy.stillOnIt}`);
             },
-            Math.max(0, since + (opts.wakeStillMs ?? WAKE_STILL_ON_IT_MS) - now)
+            Math.max(0, since + (opts.wakeStillMs ?? wakeStillWorkingAfterMs(wake2.estimate)) - now)
           );
         }
         if (giveUpTimer === null) {
           giveUpTimer = setTimeout(
             () => {
               say(`\r
-${copy.wakeTimeout(team)}`);
+${attachCopy.wakeTimeout(team)}`);
               errorMessage = "";
               exitCode = 1;
               ws.terminate();
@@ -10173,6 +10426,7 @@ ${copy.wakeTimeout(team)}`);
         if (wake2.since !== null) opts.onWaking?.(false);
         wake2.since = null;
         wake2.said = null;
+        wake2.estimate = null;
         wake2.cold = false;
         wake2.stillSaid = false;
         wakeAttempts = 0;
@@ -10384,9 +10638,9 @@ ${copy.wakeTimeout(team)}`);
           if (st === statusSaid) return;
           statusSaid = st;
           if (st === "stopped") say(`\r
-${copy.sessionStopped}`);
+${attachCopy.sessionStopped}`);
           else if (st === "error") say(`\r
-${copy.sessionError}`);
+${attachCopy.sessionError}`);
         } else if (frame.type === "geometry") {
           const pty = wireDims(
             "cols" in frame ? frame.cols : void 0,
@@ -10453,12 +10707,13 @@ ${copy.sessionError}`);
               wake2.since = Date.now();
               opts.onWaking?.(true);
             }
+            wake2.estimate = wakeEstimateOf(frame.wakeEstimate, frame.message);
             armWakeClocks(wake2.since);
             if (wake2.said !== frame.message) {
               wake2.said = frame.message;
               say(
                 `\r
-${opts.wakeText ? opts.wakeText(code, frame.message) : `${copy.prefix}${frame.message}`}`
+${opts.wakeText ? opts.wakeText(code, frame.message, wake2.estimate) : `${attachCopy.prefix}${frame.message}`}`
               );
             }
             if (!attachOutstanding) schedulePoll();
@@ -10468,7 +10723,7 @@ ${opts.wakeText ? opts.wakeText(code, frame.message) : `${copy.prefix}${frame.me
             if (canType) {
               setCanType(false);
               say(`\r
-${copy.nowViewOnly}`);
+${attachCopy.nowViewOnly}`);
             }
             return;
           }
@@ -10478,13 +10733,13 @@ ${copy.nowViewOnly}`);
             if (!quiet && errorSaid !== frame.message) {
               errorSaid = frame.message;
               say(`\r
-${copy.prefix}${frame.message}`);
+${attachCopy.prefix}${frame.message}`);
             }
             scheduleErrorRetry();
             return;
           }
           errorMessage = `\r
-${copy.prefix}${frame.message}`;
+${attachCopy.prefix}${frame.message}`;
           exitCode = 1;
           ws.close(1e3);
         } else if (frame.type === "notice" && "text" in frame) {
@@ -10497,7 +10752,7 @@ ${copy.prefix}${frame.message}`;
           }
           say(
             `\r
-${opts.noticeText ? opts.noticeText(code, frame.text) : `${copy.prefix}${frame.text}`}`
+${opts.noticeText ? opts.noticeText(code, frame.text) : `${attachCopy.prefix}${frame.text}`}`
           );
         }
       });
@@ -10689,7 +10944,7 @@ ${opts.noticeText ? opts.noticeText(code, frame.text) : `${copy.prefix}${frame.t
             kind: "ended",
             exitCode: 1,
             message: `\r
-${copy.accessEnded}`,
+${attachCopy.accessEnded}`,
             unauthorized: true
           });
           return;
@@ -10700,7 +10955,7 @@ ${copy.accessEnded}`,
           return;
         }
         resolve({ kind: "ended", exitCode, message: `\r
-${copy.detached}` });
+${attachCopy.detached}` });
       });
     });
   }
@@ -10736,10 +10991,11 @@ function wireDims(cols, rows) {
 // cli/src/context.ts
 var import_node_child_process2 = require("node:child_process");
 var import_node_os2 = __toESM(require("node:os"), 1);
+var import_promises = require("node:readline/promises");
 
 // cli/src/device-key.ts
 var import_node_fs4 = require("node:fs");
-function ensureDeviceKey(env = process.env, comment = "hq") {
+function ensureDeviceKey(env = process.env, comment = ACTIVE_DEV_BRAND.cli.command) {
   const paths = hqPaths(env);
   if ((0, import_node_fs4.existsSync)(paths.privateKey)) return loadDeviceKey(env);
   (0, import_node_fs4.mkdirSync)(paths.keysDir, { recursive: true, mode: 448 });
@@ -10756,26 +11012,38 @@ function loadDeviceKey(env = process.env) {
 
 // cli/src/state.ts
 var import_node_fs5 = require("node:fs");
-var DEFAULT_HOST = "https://hq.aiworkforceone.com";
+var DEFAULT_HOST = ACTIVE_DEV_BRAND.defaultHost ?? "";
+var InvalidHostError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "InvalidHostError";
+  }
+};
 var LOOPBACK_HOST = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
-function normalizeHost(host) {
+function normalizeHost(host, brand = ACTIVE_DEV_BRAND) {
+  const copy2 = brandCopyTag(brand);
   const trimmed = host.trim().replace(/\/+$/, "");
   if (LOOPBACK_HOST.test(trimmed)) return trimmed;
   if (/^http:\/\//i.test(trimmed)) {
-    throw new Error(`hq: "${host}" must use https:// (only localhost may use http).`);
+    throw new InvalidHostError(
+      copy2`hq: "${host}" must use https:// (only localhost may use http).`
+    );
   }
   if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(trimmed)) {
-    throw new Error(`hq: "${host}" is not an HQ address like https://hq.aiworkforceone.com`);
+    throw new InvalidHostError(
+      brand.defaultHost !== null ? copy2`hq: "${host}" is not an HQ address like https://hq.aiworkforceone.com` : copy2`hq: "${host}" is not an address like https://hq.aiworkforceone.com`
+    );
   }
   return trimmed;
 }
-function readState(env = process.env) {
-  const p = hqPaths(env).state;
-  const fallbackHost = env.HQ_HOST ? normalizeHost(env.HQ_HOST) : DEFAULT_HOST;
+function readState(env = process.env, brand = ACTIVE_DEV_BRAND) {
+  const p = hqPaths(env, brand).state;
+  const override = devBrandEnv(brand, env, "HOST");
+  const fallbackHost = override ? normalizeHost(override, brand) : brand.defaultHost ?? "";
   if (!(0, import_node_fs5.existsSync)(p)) return { host: fallbackHost };
   try {
     const parsed = JSON.parse((0, import_node_fs5.readFileSync)(p, "utf8"));
-    return { ...parsed, host: env.HQ_HOST ? fallbackHost : parsed.host ?? fallbackHost };
+    return { ...parsed, host: override ? fallbackHost : parsed.host ?? fallbackHost };
   } catch {
     return { host: fallbackHost };
   }
@@ -10790,15 +11058,35 @@ function writeState(state, env = process.env) {
 // hq-client/src/safe-text.ts
 var CONTROLS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu;
 var CONTROLS_KEEP_LINES = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/gu;
+var BIDI_CONTROLS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu;
 function oneLine(value) {
-  return value.replace(CONTROLS, " ");
+  return value.replace(CONTROLS, " ").replace(BIDI_CONTROLS, "");
 }
 function terminalSafe(value) {
   return value.replace(CONTROLS_KEEP_LINES, " ");
 }
-var ALIAS_RE = /^hq-[0-9a-f]{8,12}$/;
+function cleanSessionSummary(s) {
+  return {
+    ...s,
+    name: oneLine(String(s.name ?? "")),
+    ownerName: oneLine(String(s.ownerName ?? ""))
+  };
+}
+function aliasPattern(prefix) {
+  return new RegExp(`^${prefix.replace(/[^a-z]/g, "")}-[0-9a-f]{8,12}$`);
+}
+var ALIAS_RE = aliasPattern(ACTIVE_DEV_BRAND.teamAliasPrefix);
 var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 var ORG_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+
+// cli/src/safe-text.ts
+var JSON_UNSAFE = /[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/gu;
+function scriptSafeJson(value) {
+  return JSON.stringify(value).replace(
+    JSON_UNSAFE,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+}
 
 // cli/src/context.ts
 function defaultCtx() {
@@ -10823,7 +11111,18 @@ function defaultCtx() {
     stdoutIsTTY: process.stdout.isTTY === true,
     hostname: () => import_node_os2.default.hostname().split(".")[0] ?? "computer",
     platform: process.platform,
-    arch: process.arch
+    arch: process.arch,
+    // The question goes to stderr, so `--json` output on stdout stays one clean document.
+    ...process.stdin.isTTY === true && process.stderr.isTTY === true ? {
+      ask: async (question) => {
+        const rl = (0, import_promises.createInterface)({ input: process.stdin, output: process.stderr });
+        try {
+          return await rl.question(terminalSafe(question));
+        } finally {
+          rl.close();
+        }
+      }
+    } : {}
   };
 }
 function clientFor(ctx, state = readState(ctx.env)) {
@@ -10843,6 +11142,8 @@ function clientFor(ctx, state = readState(ctx.env)) {
 }
 
 // hq-client/src/teams.ts
+var ALIAS_PREFIX = ACTIVE_DEV_BRAND.teamAliasPrefix;
+var alias = (id, hexChars = 8) => workspaceAlias(id, hexChars, ALIAS_PREFIX);
 function isWellFormedTeam(t) {
   return ORG_SLUG_RE.test(t.org.slug) && UUID_RE.test(t.workspace.id) && ALIAS_RE.test(t.alias);
 }
@@ -10856,14 +11157,14 @@ function partitionTeams(orgs) {
   });
   const counts = /* @__PURE__ */ new Map();
   for (const t of all) {
-    const a = workspaceAlias(t.workspace.id);
+    const a = alias(t.workspace.id);
     counts.set(a, (counts.get(a) ?? 0) + 1);
   }
   const aliased = all.map((t) => {
-    const short = workspaceAlias(t.workspace.id);
+    const short = alias(t.workspace.id);
     return {
       ...t,
-      alias: (counts.get(short) ?? 0) > 1 ? workspaceAlias(t.workspace.id, 12) : short
+      alias: (counts.get(short) ?? 0) > 1 ? alias(t.workspace.id, 12) : short
     };
   });
   return {
@@ -10883,17 +11184,16 @@ function resolveTeam(orgs, ref, org) {
     (t) => t.alias === needle || t.workspace.id.toLowerCase() === needle || t.workspace.name.toLowerCase() === needle
   );
   if (exact.length === 1) return exact[0];
-  const prefix = teams.filter(
-    (t) => t.workspace.id.toLowerCase().startsWith(needle.replace(/^hq-/, ""))
-  );
+  const bare = needle.startsWith(`${ALIAS_PREFIX}-`) ? needle.slice(ALIAS_PREFIX.length + 1) : needle;
+  const prefix = teams.filter((t) => t.workspace.id.toLowerCase().startsWith(bare));
   if (exact.length === 0 && prefix.length === 1) return prefix[0];
   if (exact.length > 1 || prefix.length > 1) {
     throw new TeamNotFoundError(
-      `hq: "${ref}" matches more than one team. Use the hq-\u2026 name from hq status.`
+      copy`hq: "${ref}" matches more than one team. Use the hq-… name from hq status.`
     );
   }
   throw new TeamNotFoundError(
-    `hq: no team "${ref}" on this login. Run hq status to see your teams.`
+    copy`hq: no team "${ref}" on this login. Run hq status to see your teams.`
   );
 }
 
@@ -11664,7 +11964,7 @@ var LocalEchoSession = class _LocalEchoSession {
 
 // cli/src/commands/attach.ts
 var DETACH_BYTE = 29;
-var LOCAL_ECHO_UNAVAILABLE = "hq: local echo is not available on this HQ yet.";
+var LOCAL_ECHO_UNAVAILABLE = copy`hq: local echo is not available on this HQ yet.`;
 async function findSession(client, orgs, ref, org, teamRef) {
   const needle = ref.trim().toLowerCase();
   const teams = withTeamAliases(orgs).filter(
@@ -11672,9 +11972,9 @@ async function findSession(client, orgs, ref, org, teamRef) {
   );
   const hits = [];
   for (const team of teams) {
-    let sessions = [];
+    let sessions2 = [];
     try {
-      sessions = (await client.request(
+      sessions2 = (await client.request(
         "GET",
         `/api/remote/orgs/${encodeURIComponent(team.org.slug)}/workspaces/${team.workspace.id}/sessions`,
         { org: team.org.slug }
@@ -11682,9 +11982,11 @@ async function findSession(client, orgs, ref, org, teamRef) {
     } catch {
       continue;
     }
-    for (const s of sessions) {
-      if (s.id.toLowerCase().startsWith(needle) || s.name.toLowerCase() === needle)
-        hits.push({ team, session: s });
+    for (const raw of sessions2) {
+      const s = cleanSessionSummary(raw);
+      const rawName = String(raw.name ?? "");
+      if (s.id.toLowerCase().startsWith(needle) || s.name.toLowerCase() === needle || rawName.toLowerCase() === needle)
+        hits.push({ team, session: s, rawName });
     }
   }
   return hits;
@@ -11697,12 +11999,12 @@ async function attach(ctx, opts, io) {
   const hits = await findSession(client, orgs, opts.session, opts.org, opts.team);
   if (hits.length === 0) {
     ctx.err(
-      `hq: no session "${opts.session}" you can open. Sessions are listed in HQ on the team page.`
+      copy`hq: no session "${opts.session}" you can open. Sessions are listed in HQ on the team page.`
     );
     return 1;
   }
   if (hits.length > 1) {
-    ctx.err(`hq: "${opts.session}" matches ${hits.length} sessions. Use more of the id:`);
+    ctx.err(copy`hq: "${opts.session}" matches ${hits.length} sessions. Use more of the id:`);
     for (const h of hits)
       ctx.err(`  ${h.session.id.slice(0, 8)}  ${h.team.workspace.name} / ${h.session.name}`);
     return 1;
@@ -11770,11 +12072,11 @@ async function attach(ctx, opts, io) {
   try {
     const end = await attachSession.run();
     if (end.kind === "refused") {
-      ctx.err(end.status === 0 ? "hq: could not reach HQ." : upgradeRefusalMessage(end.status));
+      ctx.err(end.status === 0 ? copy`hq: could not reach HQ.` : upgradeRefusalMessage(end.status));
       return 1;
     }
     if (end.kind === "lost") {
-      ctx.err("\r\nhq: the connection to HQ was lost.");
+      ctx.err(copy`\r\nhq: the connection to HQ was lost.`);
       return 1;
     }
     if (end.message) ctx.err(end.message);
@@ -11787,12 +12089,26 @@ async function attach(ctx, opts, io) {
 }
 
 // cli/src/command-manifest.ts
+var LEGACY_SSH_CONFIG = ACTIVE_DEV_BRAND.cli.legacySshConfig;
 var CLI_TAGLINE = "connect this computer to your AI Team Cloud Computers";
 var HELP_FOOTNOTE = "<team> is the hq-\u2026 name from hq status, or the team's name. --org <slug> narrows either.";
 var ORG_FLAG = {
   name: "org",
   valueHint: "<slug>",
   description: "Only look in this organization, when you belong to more than one."
+};
+var JSON_FLAG = {
+  name: "json",
+  description: "Print the result as one JSON document on stdout. Refusals are still plain text on stderr, with exit code 1."
+};
+var YES_FLAG = {
+  name: "yes",
+  description: "Do not ask before interrupting a session that is answering. Without it, and without a terminal to ask at, `hq` refuses."
+};
+var SESSION_TEAM_FLAG = {
+  name: "team",
+  valueHint: "<t>",
+  description: "Only look for the session in this team (its `hq-\u2026` name or its name). Use it when the same session name exists in two teams."
 };
 var CLI_COMMANDS = [
   {
@@ -11813,7 +12129,9 @@ var CLI_COMMANDS = [
       {
         name: "host",
         valueHint: "<url>",
-        description: "The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`."
+        description: brandText(
+          "The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`."
+        )
       },
       {
         name: "no-browser",
@@ -11823,7 +12141,7 @@ var CLI_COMMANDS = [
     examples: [
       { cmd: "hq login", description: "Sign in to HQ. Your browser opens the approval page." },
       {
-        cmd: "hq login --host https://hq.aiworkforceone.com",
+        cmd: brandText("hq login --host https://hq.aiworkforceone.com"),
         description: "Sign in to a specific HQ address."
       },
       {
@@ -11854,7 +12172,7 @@ var CLI_COMMANDS = [
   {
     name: "up",
     usage: ["hq up <team> [--org <slug>]"],
-    summary: "Wake a sleeping AI Team Cloud Computer and wait until it is ready (about 15 seconds, up to 3 minutes).",
+    summary: "Wake a sleeping AI Team Cloud Computer and wait until it is ready (usually 15-30 seconds, 30-45 seconds on Boost Max, up to 3 minutes).",
     help: [{ text: "hq up <team>", summary: "wake an AI Team Cloud Computer" }],
     flags: [ORG_FLAG],
     examples: [{ cmd: "hq up hq-3f9a1c2e", description: "Wake the team with this `hq-\u2026` name." }],
@@ -11911,6 +12229,110 @@ var CLI_COMMANDS = [
         meaning: "No session matched (or more than one did), HQ could not be reached, or your access ended."
       },
       { code: 2, meaning: "No session named, or `--local-echo` was not auto, always or off." }
+    ]
+  },
+  {
+    name: "sessions",
+    usage: ["hq sessions [--team <t>] [--json] [--org <slug>]"],
+    summary: "List the sessions in your teams: the first characters of each id, its name, its team, whether it is running, who owns it, and whether you may start, stop and restart it. View-only sessions are listed too.",
+    help: [
+      {
+        text: "hq sessions [--team <t>] [--json]",
+        summary: "list your sessions and who may operate them"
+      }
+    ],
+    flags: [
+      {
+        name: "team",
+        valueHint: "<t>",
+        description: "Only list the sessions of this team (its `hq-\u2026` name or its name)."
+      },
+      JSON_FLAG,
+      ORG_FLAG
+    ],
+    examples: [
+      { cmd: "hq sessions", description: "List the sessions in all your teams." },
+      {
+        cmd: "hq sessions --team hq-3f9a1c2e --json",
+        description: "List one team as JSON, for a script."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "Printed (a team whose list could not be read is named on stderr)." },
+      { code: 1, meaning: "Not signed in, or HQ could not be reached." }
+    ]
+  },
+  {
+    name: "start",
+    usage: ["hq start <session> [--team <t>] [--json] [--org <slug>]"],
+    summary: "Start a stopped session, by the first characters of its id or its name. A sleeping AI Team Cloud Computer wakes for it, as when you press Start in HQ. Only the session owner or a team owner can start it.",
+    help: [{ text: "hq start <session>", summary: "start a session (its team wakes for it)" }],
+    flags: [SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [
+      {
+        cmd: "hq start 7c21e0b4",
+        description: "Start a session by the first characters of its id."
+      },
+      {
+        cmd: 'hq start "fix login bug" --team hq-3f9a1c2e',
+        description: "Start a session by name in one team."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "HQ is starting the session, or it was already starting or running." },
+      {
+        code: 1,
+        meaning: "No session matched (or more than one did), you may not operate it, the team has no free session slot, or HQ refused or could not be reached."
+      },
+      { code: 2, meaning: "No session named." }
+    ]
+  },
+  {
+    name: "stop",
+    usage: ["hq stop <session> [--yes] [--team <t>] [--json] [--org <slug>]"],
+    summary: "Stop a running session. If Claude or Codex is answering in it right now, `hq` asks first; in a script, pass `--yes`. Only the session owner or a team owner can stop it.",
+    help: [
+      {
+        text: "hq stop <session> [--yes]",
+        summary: "stop a session (asks first if it is answering)"
+      }
+    ],
+    flags: [YES_FLAG, SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [
+      { cmd: "hq stop 7c21e0b4", description: "Stop a session." },
+      {
+        cmd: 'hq stop "fix login bug" --yes',
+        description: "Stop it without asking, even while it is answering."
+      }
+    ],
+    exitCodes: [
+      { code: 0, meaning: "Stopped, or it was already stopped." },
+      {
+        code: 1,
+        meaning: "No session matched (or more than one did), you may not operate it, you answered no, it is answering and there is no terminal to ask (pass `--yes`), or HQ refused or could not be reached."
+      },
+      { code: 2, meaning: "No session named." }
+    ]
+  },
+  {
+    name: "restart",
+    usage: ["hq restart <session> [--yes] [--team <t>] [--json] [--org <slug>]"],
+    summary: "Stop a session and start it again, resuming its conversation. Like `hq stop`, it asks first while the session is answering. Only the session owner or a team owner can restart it.",
+    help: [
+      {
+        text: "hq restart <session> [--yes]",
+        summary: "restart a session, resuming its conversation"
+      }
+    ],
+    flags: [YES_FLAG, SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [{ cmd: "hq restart 7c21e0b4", description: "Restart a session." }],
+    exitCodes: [
+      { code: 0, meaning: "HQ is restarting the session." },
+      {
+        code: 1,
+        meaning: "No session matched (or more than one did), you may not operate it, you answered no, it is answering and there is no terminal to ask (pass `--yes`), or HQ refused or could not be reached."
+      },
+      { code: 2, meaning: "No session named." }
     ]
   },
   {
@@ -11981,7 +12403,7 @@ var CLI_COMMANDS = [
     name: "ssh-proxy",
     removed: true,
     usage: ["hq ssh-proxy"],
-    summary: `${SSH_REMOVED_MESSAGE} An old \`Host hq-\u2026\` entry in \`~/.ssh/hq_config\` still runs this; delete that file and its \`Include\` line in \`~/.ssh/config\`.`,
+    summary: LEGACY_SSH_CONFIG ? `${SSH_REMOVED_MESSAGE} An old \`Host hq-\u2026\` entry in \`${LEGACY_SSH_CONFIG}\` still runs this; delete that file and its \`Include\` line in \`~/.ssh/config\`.` : SSH_REMOVED_MESSAGE,
     help: [],
     flags: [],
     examples: [
@@ -12011,14 +12433,22 @@ function helpLine(line) {
   if (line.summary === void 0) return lead;
   return lead.length < HELP_COLUMN ? `${lead.padEnd(HELP_COLUMN)}${line.summary}` : `${lead} ${line.summary}`;
 }
-function renderUsage(version) {
+function renderUsage(version, brand = ACTIVE_DEV_BRAND) {
+  const b = (text) => rebrandCopy(brand, text);
   return [
-    `hq ${version}: ${CLI_TAGLINE}`,
+    `${brand.cli.command} ${version}: ${b(CLI_TAGLINE)}`,
     "",
     "Usage:",
-    ...CLI_COMMANDS.flatMap((c) => c.help.map(helpLine)),
+    ...CLI_COMMANDS.flatMap(
+      (c) => c.help.map(
+        (l) => helpLine({
+          text: b(l.text),
+          ...l.summary !== void 0 ? { summary: b(l.summary) } : {}
+        })
+      )
+    ),
     "",
-    HELP_FOOTNOTE
+    b(HELP_FOOTNOTE)
   ].join("\n");
 }
 
@@ -12085,7 +12515,7 @@ async function startForward(deps, client, team, remotePort, localPort, opts = {}
       if (!sock.destroyed) sock.end();
     }).catch((err) => {
       deps.say(
-        err instanceof TunnelRefusedError ? err.message : `hq: stream failed (${err.message})`
+        err instanceof TunnelRefusedError ? err.message : copy`hq: stream failed (${err.message})`
       );
       sock.destroy();
     });
@@ -12099,7 +12529,7 @@ async function startForward(deps, client, team, remotePort, localPort, opts = {}
   const done = new Promise((r) => resolveDone = r);
   const heartbeat = setInterval(() => {
     void lock.run(() => client.request("GET", connectionsPath(team, conn.id), { org, signed: true })).catch((err) => {
-      deps.say(`hq: the forward ended (${err.message}).`);
+      deps.say(copy`hq: the forward ended (${err.message}).`);
       void close(1);
     });
   }, HEARTBEAT_MS);
@@ -12134,7 +12564,7 @@ async function wake(ctx, team, client) {
     throw new ConnectRefusedError(refusalMessage(team, err));
   }
   if (answer.body.state === "running") return;
-  ctx.err(`hq: waking team "${team.workspace.name}" (about 15 s)...`);
+  ctx.err(wakingTeamLine(team));
   const deadline = ctx.now() + WAKE_TIMEOUT_MS;
   while (ctx.now() < deadline) {
     await ctx.sleep(WAKE_POLL_MS);
@@ -12174,12 +12604,12 @@ function startForward2(ctx, client, team, remotePort, localPort, wsFactory) {
 async function forward(ctx, opts) {
   const remotePort = parsePort(opts.port, 1024);
   if (remotePort === null) {
-    ctx.err("hq: the team port must be a number from 1024 to 65535.");
+    ctx.err(copy`hq: the team port must be a number from 1024 to 65535.`);
     return 2;
   }
   const localPort = opts.local === void 0 ? remotePort : parsePort(opts.local, 1);
   if (localPort === null) {
-    ctx.err("hq: --local must be a port number.");
+    ctx.err(copy`hq: --local must be a port number.`);
     return 2;
   }
   try {
@@ -12208,14 +12638,47 @@ async function loadTeamForForward(ctx, ref, org) {
   );
   if (candidates.length === 1) return { team: candidates[0], client };
   throw new Error(
-    candidates.length === 0 ? "hq: no team lets you forward ports. Run hq status to see your teams." : "hq: more than one team can forward ports. Name one with --team <hq-name>."
+    candidates.length === 0 ? copy`hq: no team lets you forward ports. Run hq status to see your teams.` : copy`hq: more than one team can forward ports. Name one with --team <hq-name>.`
   );
+}
+
+// cli/src/host-brand.ts
+var MAX_NAME = 40;
+var LOOKUP_TIMEOUT_MS = 3e3;
+var BIDI = /[‪-‮⁦-⁩]/gu;
+async function hostBrandName(fetchFn, host) {
+  let body;
+  try {
+    const res = await fetchFn(`${host}/api/brand`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS)
+    });
+    if (res.status !== 200) return null;
+    body = await res.json();
+  } catch {
+    return null;
+  }
+  if (typeof body !== "object" || body === null) return null;
+  const { branded, appName } = body;
+  if (branded !== true || typeof appName !== "string") return null;
+  const name = oneLine(appName).replace(BIDI, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
+  return name.length > 0 ? name : null;
 }
 
 // cli/src/commands/login.ts
 function platformLabel(platform, arch) {
   const os3 = platform === "darwin" ? "macOS" : platform === "win32" ? "Windows" : platform === "linux" ? "Linux" : platform;
   return `${os3} ${arch}`;
+}
+function wrongHostOf(body) {
+  const host = body?.details?.host;
+  if (typeof host !== "string") return null;
+  try {
+    const u = new URL(host);
+    return u.protocol === "https:" && u.origin === host ? host : null;
+  } catch {
+    return null;
+  }
 }
 function isOnHost(url, host) {
   let u;
@@ -12230,21 +12693,37 @@ function isOnHost(url, host) {
   return !/[\s"'`<>|&^%]/.test(url);
 }
 function skipBrowser(ctx, noBrowser) {
-  if (noBrowser || ctx.env.HQ_NO_BROWSER === "1") return true;
+  if (noBrowser || devBrandEnv(ACTIVE_DEV_BRAND, ctx.env, "NO_BROWSER") === "1") return true;
   if (!ctx.stdoutIsTTY) return true;
   return ctx.platform === "linux" && !ctx.env.DISPLAY && !ctx.env.WAYLAND_DISPLAY;
 }
 var NEXT_STEPS = [
   "Next:",
-  "  hq status                          see your teams and their hq-\u2026 names",
-  "  hq forward <port> --team <team>    reach a port on an AI Team Cloud Computer",
-  "  hq attach <session> --team <team>  join an HQ session in this terminal",
-  "Or use the AI Workforce One HQ extension for VS Code."
+  ...[
+    [brandText("hq status"), brandText("see your teams and their hq-\u2026 names")],
+    [
+      brandText("hq forward <port> --team <team>"),
+      brandText("reach a port on an AI Team Cloud Computer")
+    ],
+    [
+      brandText("hq attach <session> --team <team>"),
+      brandText("join an HQ session in this terminal")
+    ]
+  ].map(([cmd, what], _i, all) => {
+    const width = Math.max(...all.map(([c]) => brandText(c).length)) + 2;
+    return `  ${brandText(cmd).padEnd(width)}${brandText(what)}`;
+  }),
+  copy`Or use the AI Workforce One HQ extension for VS Code.`
 ];
+var NAME_YOUR_HOST = copy`hq: name the address you sign in to, for example: hq login --host https://hq.aiworkforceone.com`;
 async function login(ctx, opts) {
   const state = readState(ctx.env);
   const host = opts.host ? normalizeHost(opts.host) : state.host;
-  const key = ensureDeviceKey(ctx.env, `hq@${ctx.hostname()}`);
+  if (host === "") {
+    ctx.err(NAME_YOUR_HOST);
+    return 2;
+  }
+  const key = ensureDeviceKey(ctx.env, copy`hq@${ctx.hostname()}`);
   const deviceLabel = ctx.hostname();
   const start = await postJson2(
     ctx.fetch,
@@ -12258,11 +12737,11 @@ async function login(ctx, opts) {
     }
   );
   if (start.status === 404) {
-    ctx.err("hq: remote access is not available on this HQ yet.");
+    ctx.err(copy`hq: remote access is not available on this HQ yet.`);
     return 1;
   }
   if (start.status !== 200) {
-    ctx.err(`hq: ${start.body?.error ?? `could not start the login (HTTP ${start.status})`}`);
+    ctx.err(copy`hq: ${start.body?.error ?? `could not start the login (HTTP ${start.status})`}`);
     return 1;
   }
   const s = start.body;
@@ -12283,7 +12762,7 @@ async function login(ctx, opts) {
   ctx.out(`    ${s.userCode}`);
   ctx.out("");
   ctx.out(
-    `This computer: ${deviceLabel} (hq ${HQ_VERSION}, ${platformLabel(ctx.platform, ctx.arch)})`
+    copy`This computer: ${deviceLabel} (hq ${HQ_VERSION}, ${platformLabel(ctx.platform, ctx.arch)})`
   );
   ctx.out(
     `Waiting for approval (code expires in ${Math.round(s.expiresIn / 60)} min, Ctrl-C to cancel)...`
@@ -12313,7 +12792,10 @@ async function login(ctx, opts) {
         { host, user: approved.user, grantId: approved.grantId, orgs: approved.orgs },
         ctx.env
       );
-      ctx.out(`Logged in as ${approved.user.email} \xB7 access renews automatically on this device`);
+      const brandName = await hostBrandName(ctx.fetch, host);
+      ctx.out(
+        `Logged in ${brandName ? `to ${brandName} ` : ""}as ${approved.user.email} \xB7 access renews automatically on this device`
+      );
       if (approved.orgs.length > 0) {
         ctx.out(`Orgs: ${approved.orgs.map((o) => `${o.name} (${o.slug})`).join(", ")}`);
       }
@@ -12324,22 +12806,29 @@ async function login(ctx, opts) {
       interval = Math.max(interval, poll.body.interval);
       continue;
     }
+    if (poll.status === 409 && poll.body.code === "DEVICE_WRONG_HOST") {
+      const right = wrongHostOf(poll.body);
+      ctx.err(
+        right ? copy`hq: this account signs in at ${right}, not ${host}. Run: hq login --host ${right}` : copy`hq: this account signs in at a different address than ${host}.`
+      );
+      return 1;
+    }
     if (poll.status === 403) {
-      ctx.err("hq: the login was denied in the browser.");
+      ctx.err(copy`hq: the login was denied in the browser.`);
       return 1;
     }
     if (poll.status === 410) {
-      ctx.err("hq: this login code expired. Run hq login again.");
+      ctx.err(copy`hq: this login code expired. Run hq login again.`);
       return 1;
     }
     if (poll.status === 429) {
       interval += 5;
       continue;
     }
-    ctx.err(`hq: ${poll.body?.error ?? `login failed (HTTP ${poll.status})`}`);
+    ctx.err(copy`hq: ${poll.body?.error ?? `login failed (HTTP ${poll.status})`}`);
     return 1;
   }
-  ctx.err("hq: this login code expired. Run hq login again.");
+  ctx.err(copy`hq: this login code expired. Run hq login again.`);
   return 1;
 }
 
@@ -12361,13 +12850,13 @@ async function logout(ctx) {
       if (!await client.confirmRevoked()) {
         revoked = false;
         ctx.err(
-          "hq: HQ did not confirm that this computer\u2019s access ended. Remove it in HQ, under Account, Devices."
+          copy`hq: HQ did not confirm that this computer’s access ended. Remove it in HQ, under Account, Devices.`
         );
       }
     } else {
       revoked = false;
       ctx.err(
-        `hq: could not reach HQ to revoke this device (${err.message}). Signed out locally.`
+        copy`hq: could not reach HQ to revoke this device (${err.message}). Signed out locally.`
       );
     }
   }
@@ -12376,6 +12865,196 @@ async function logout(ctx) {
   ctx.out(
     revoked ? "Signed out. This device's access is revoked." : "Signed out on this computer."
   );
+  return 0;
+}
+
+// cli/src/commands/sessions.ts
+function teamJson(team) {
+  return {
+    id: team.workspace.id,
+    alias: team.alias,
+    name: team.workspace.name,
+    org: team.org.slug
+  };
+}
+function ownerLabel(s) {
+  return s.ownerIsMe === true ? "you" : s.ownerName;
+}
+function mayLabel(s) {
+  if (s.canOperate === true) return "can operate";
+  if (s.canOperate === false) return "view only";
+  return "";
+}
+function shownState(s) {
+  return s.starting === true ? "starting" : s.status;
+}
+function agentName(s) {
+  return s.engine === "codex" ? "Codex" : "Claude";
+}
+async function loadOrgs(ctx) {
+  const state = readState(ctx.env);
+  const client = clientFor(ctx, state);
+  const { body: orgs } = await client.request("GET", "/api/remote/orgs");
+  writeState({ ...state, orgs }, ctx.env);
+  return { orgs, client };
+}
+async function sessions(ctx, opts = {}) {
+  const { orgs, client } = await loadOrgs(ctx);
+  const needle = opts.team?.trim().toLowerCase();
+  const teams = withTeamAliases(orgs).filter(
+    (t) => t.org.remoteAccess.allowed && t.workspace.rights.attach && (!opts.org || t.org.slug === opts.org) && (!needle || t.alias === needle || t.workspace.name.toLowerCase() === needle)
+  );
+  const rows = [];
+  let listedTeams = 0;
+  for (const team of teams) {
+    let list;
+    try {
+      list = await client.listSessions(team);
+    } catch {
+      ctx.err(copy`hq: could not list the sessions of team "${team.workspace.name}".`);
+      continue;
+    }
+    listedTeams += 1;
+    for (const raw of list) {
+      rows.push({ team, session: cleanSessionSummary(raw), rawName: String(raw.name ?? "") });
+    }
+  }
+  if (opts.json) {
+    ctx.out(
+      scriptSafeJson(
+        rows.map(({ team, session, rawName }) => ({
+          id: session.id,
+          name: session.name,
+          rawName,
+          team: teamJson(team),
+          state: shownState(session),
+          owner: session.ownerName,
+          ownerIsMe: session.ownerIsMe === true,
+          canOperate: session.canOperate ?? null,
+          canType: session.canType,
+          midTurn: session.midTurn === true,
+          engine: session.engine ?? "claude"
+        }))
+      )
+    );
+    return 0;
+  }
+  if (rows.length === 0) {
+    ctx.out(copy`No sessions in your teams yet. Sessions are created in HQ.`);
+    return 0;
+  }
+  ctx.out(
+    `${rows.length} ${rows.length === 1 ? "session" : "sessions"} in ${listedTeams} ${listedTeams === 1 ? "team" : "teams"}`
+  );
+  for (const { team, session } of rows) {
+    ctx.out(
+      `  ${session.id.slice(0, 8)}  ${session.name.padEnd(18)}  ${team.workspace.name.padEnd(18)}  ${shownState(session).padEnd(8)}  ${ownerLabel(session).padEnd(14)}  ${mayLabel(session)}`.trimEnd()
+    );
+  }
+  return 0;
+}
+var DONE = {
+  start: "started",
+  stop: "stopped",
+  restart: "restarted"
+};
+async function sessionAction(ctx, action, opts) {
+  const { orgs, client } = await loadOrgs(ctx);
+  const hits = await findSession(client, orgs, opts.session, opts.org, opts.team);
+  if (hits.length === 0) {
+    ctx.err(copy`hq: no session "${opts.session}" you can see. Run hq sessions to list them.`);
+    return 1;
+  }
+  if (hits.length > 1) {
+    ctx.err(copy`hq: "${opts.session}" matches ${hits.length} sessions. Use more of the id:`);
+    for (const h of hits)
+      ctx.err(`  ${h.session.id.slice(0, 8)}  ${h.team.workspace.name} / ${h.session.name}`);
+    return 1;
+  }
+  const { team, session, rawName } = hits[0];
+  if (session.canOperate === false) {
+    ctx.err(copy`hq: ${SESSION_NOT_OPERATOR_MESSAGE}`);
+    return 1;
+  }
+  if (action !== "start" && session.midTurn === true && opts.yes !== true) {
+    const verb = action === "stop" ? "stop" : "restart";
+    const busy = `${agentName(session)} is answering in "${session.name}" right now.`;
+    if (!ctx.ask) {
+      ctx.err(copy`hq: ${busy} Run the command again with --yes to ${verb} it anyway.`);
+      return 1;
+    }
+    const verbCap = verb === "stop" ? "Stop" : "Restart";
+    const reply = await ctx.ask(`${busy} ${verbCap} it anyway? [y/N] `);
+    if (!/^\s*y(es)?\s*$/i.test(reply)) {
+      ctx.err(copy`hq: not ${action === "stop" ? "stopped" : "restarted"}.`);
+      return 1;
+    }
+  }
+  if (action === "start" && team.workspace.state === "asleep") {
+    ctx.err(copy`hq: team "${team.workspace.name}" is sleeping. Starting the session wakes it.`);
+  } else if (action === "start" && team.workspace.state === "stopped") {
+    ctx.err(
+      copy`hq: team "${team.workspace.name}" has no running Cloud Computer. Starting the session starts it.`
+    );
+  }
+  let answer;
+  try {
+    answer = action === "start" ? await client.startSession(team, session.id) : action === "stop" ? await client.stopSession(team, session.id) : await client.restartSession(team, session.id);
+  } catch (err) {
+    const refusal = describeSessionRefusal(err, action, {
+      session: session.name,
+      team: team.workspace.name
+    });
+    refusal.message = oneLine(refusal.message);
+    if (refusal.kind === "already") {
+      const stillStarting = action !== "stop" && (session.starting === true || session.status === "stopped");
+      const short2 = session.id.slice(0, 8);
+      if (opts.json) {
+        ctx.out(
+          scriptSafeJson({
+            id: session.id,
+            name: session.name,
+            rawName,
+            team: teamJson(team),
+            action,
+            result: action === "stop" ? "already_stopped" : stillStarting ? "already_starting" : "already_running",
+            status: action === "stop" ? "stopped" : stillStarting ? "starting" : "running"
+          })
+        );
+      } else if (stillStarting) {
+        ctx.out(
+          copy`Session "${session.name}" is already starting. Follow it with hq attach ${short2}.`
+        );
+      } else ctx.out(refusal.message);
+      return 0;
+    }
+    ctx.err(copy`hq: ${refusal.message}`);
+    return 1;
+  }
+  if (opts.json) {
+    ctx.out(
+      scriptSafeJson({
+        id: session.id,
+        name: session.name,
+        rawName,
+        team: teamJson(team),
+        action,
+        result: DONE[action],
+        status: answer.status
+      })
+    );
+    return 0;
+  }
+  const short = session.id.slice(0, 8);
+  if (action === "start") {
+    ctx.out(
+      copy`Starting session "${session.name}" on team "${team.workspace.name}". Follow it with hq attach ${short}.`
+    );
+  } else if (action === "stop") {
+    ctx.out(`Stopped session "${session.name}".`);
+  } else {
+    ctx.out(copy`Restarting session "${session.name}". Follow it with hq attach ${short}.`);
+  }
   return 0;
 }
 
@@ -12389,7 +13068,7 @@ async function status(ctx) {
     `${state.user?.email ?? "signed in"} \xB7 ${orgs.length} ${orgs.length === 1 ? "org" : "orgs"}`
   );
   for (const t of withTeamAliases(orgs)) {
-    const note = !t.org.remoteAccess.allowed ? `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}` : !t.workspace.supported ? "Cloud Computer update pending" : !t.workspace.rights.forward && !t.workspace.rights.attach ? "no access" : t.workspace.state === "stopped" ? "no running Cloud Computer, start a session in HQ first" : t.workspace.rights.forward ? "remote access ready" : "attach only";
+    const note = !t.org.remoteAccess.allowed ? t.org.remoteAccess.reason === "staged_rollout" ? "Remote access isn't available for this organization yet." : `remote access off: ${deniedReasonText(t.org.remoteAccess.reason)}` : !t.workspace.supported ? "Cloud Computer update pending" : !t.workspace.rights.forward && !t.workspace.rights.attach ? "no access" : t.workspace.state === "stopped" ? copy`no running Cloud Computer, start a session in HQ first` : t.workspace.rights.forward ? "remote access ready" : "attach only";
     const state2 = t.workspace.state === "running" ? "awake" : t.workspace.state === "starting" ? "starting" : t.workspace.state === "asleep" ? "asleep" : "off";
     ctx.out(
       `  ${t.alias.padEnd(12)}  ${t.org.slug}/${t.workspace.name.padEnd(18)}  ${state2.padEnd(8)}  ${note}`
@@ -12400,13 +13079,11 @@ async function status(ctx) {
 function deniedReasonText(reason) {
   switch (reason) {
     case "two_factor_required":
-      return "two-step verification needed (run hq login again)";
+      return copy`two-step verification needed (run hq login again)`;
     case "plan_inactive":
       return "the plan is not active";
     case "feature_not_in_plan":
       return "not included in this plan";
-    case "staged_rollout":
-      return "not available to this org yet";
     case "advanced_terminal_off":
       return "the advanced terminal is off for this org";
     default:
@@ -12420,7 +13097,7 @@ function resolveLocalEchoMode(flag, env) {
   if (flag === true) return { mode: "auto" };
   if (typeof flag === "string") {
     const v2 = flag.trim().toLowerCase();
-    return MODES.has(v2) ? { mode: v2 } : { error: "hq: --local-echo takes auto, always or off." };
+    return MODES.has(v2) ? { mode: v2 } : { error: copy`hq: --local-echo takes auto, always or off.` };
   }
   const v = (env ?? "").trim().toLowerCase();
   if (MODES.has(v)) return { mode: v };
@@ -12459,10 +13136,10 @@ async function run(argv, ctx = defaultCtx()) {
       // script or an old ~/.ssh/hq_config entry gets the reason instead of "unknown command".
       case "ssh":
       case "open":
-        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        ctx.err(copy`hq: ${SSH_REMOVED_MESSAGE}`);
         return 1;
       case "ssh-proxy":
-        ctx.err(`hq: ${SSH_REMOVED_MESSAGE}`);
+        ctx.err(copy`hq: ${SSH_REMOVED_MESSAGE}`);
         return 255;
       case "up":
         if (!rest[0]) break;
@@ -12470,7 +13147,10 @@ async function run(argv, ctx = defaultCtx()) {
       case "attach": {
         if (!rest[0]) break;
         const team = flagString(args, "team");
-        const echo = resolveLocalEchoMode(args.flags.get("local-echo"), ctx.env.HQ_LOCAL_ECHO);
+        const echo = resolveLocalEchoMode(
+          args.flags.get("local-echo"),
+          devBrandEnv(ACTIVE_DEV_BRAND, ctx.env, "LOCAL_ECHO")
+        );
         if ("error" in echo) {
           ctx.err(echo.error);
           return 2;
@@ -12486,6 +13166,48 @@ async function run(argv, ctx = defaultCtx()) {
           { stdin: process.stdin, stdout: process.stdout }
         );
       }
+      // cli-session-lifecycle: list sessions, and start / stop / restart one (the web's routes'
+      // bearer twins). `--yes` skips the mid-answer question; `--json` prints one JSON document.
+      case "sessions": {
+        const team = flagString(args, "team");
+        return await sessions(ctx, {
+          ...org ? { org } : {},
+          ...team ? { team } : {},
+          json: args.flags.has("json")
+        });
+      }
+      case "start": {
+        if (!rest[0]) break;
+        const team = flagString(args, "team");
+        return await sessionAction(ctx, "start", {
+          session: rest[0],
+          ...org ? { org } : {},
+          ...team ? { team } : {},
+          json: args.flags.has("json")
+        });
+      }
+      case "stop": {
+        if (!rest[0]) break;
+        const team = flagString(args, "team");
+        return await sessionAction(ctx, "stop", {
+          session: rest[0],
+          ...org ? { org } : {},
+          ...team ? { team } : {},
+          json: args.flags.has("json"),
+          yes: args.flags.has("yes")
+        });
+      }
+      case "restart": {
+        if (!rest[0]) break;
+        const team = flagString(args, "team");
+        return await sessionAction(ctx, "restart", {
+          session: rest[0],
+          ...org ? { org } : {},
+          ...team ? { team } : {},
+          json: args.flags.has("json"),
+          yes: args.flags.has("yes")
+        });
+      }
       case "forward": {
         if (!rest[0]) break;
         const local = flagString(args, "local");
@@ -12498,16 +13220,17 @@ async function run(argv, ctx = defaultCtx()) {
         });
       }
       default:
-        ctx.err(`hq: unknown command "${cmd}". Run hq --help.`);
+        ctx.err(copy`hq: unknown command "${cmd}". Run hq --help.`);
         return 2;
     }
   } catch (err) {
-    if (err instanceof NotLoggedInError || err instanceof TeamNotFoundError) ctx.err(err.message);
-    else if (err instanceof HqApiError) ctx.err(`hq: ${err.message}`);
-    else ctx.err(`hq: ${err.message}`);
+    if (err instanceof NotLoggedInError || err instanceof TeamNotFoundError || err instanceof InvalidHostError) {
+      ctx.err(err.message);
+    } else if (err instanceof HqApiError) ctx.err(copy`hq: ${err.message}`);
+    else ctx.err(copy`hq: ${err.message}`);
     return 1;
   }
-  ctx.err(`hq: missing arguments for "${cmd}". Run hq --help.`);
+  ctx.err(copy`hq: missing arguments for "${cmd}". Run hq --help.`);
   return 2;
 }
 var isMain = typeof require !== "undefined" && typeof module !== "undefined" && require.main === module;

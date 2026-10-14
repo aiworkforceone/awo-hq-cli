@@ -20,10 +20,16 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { StoredTokens } from '@hq/client/api.js';
 import { hqPaths } from './paths.js';
+import { ACTIVE_DEV_BRAND, copy } from '@kpa/shared/active-dev-brand';
+import { devBrandEnv } from '@kpa/shared/dev-brand-core';
 
 export type { StoredTokens };
 
-const SERVICE = 'hq.aiworkforceone';
+/** One keychain item set per brand (`hq.aiworkforceone` for AWO): two CLIs never share a login. */
+const SERVICE = ACTIVE_DEV_BRAND.cli.keychainService;
+/** `HQ_KEYCHAIN` (the brand's prefix), and the macOS test seam beside it. */
+const keychainEnv = (env: NodeJS.ProcessEnv, suffix = 'KEYCHAIN'): string | undefined =>
+  devBrandEnv(ACTIVE_DEV_BRAND, env, suffix);
 
 type Backend = 'macos' | 'libsecret' | 'file';
 
@@ -37,25 +43,40 @@ function hasTool(cmd: string): boolean {
 }
 
 export function keychainBackend(env: NodeJS.ProcessEnv = process.env): Backend {
-  if (env.HQ_KEYCHAIN === 'file') return 'file';
+  if (keychainEnv(env) === 'file') return 'file';
   // Explicit choice (and the test seam for the fallback below); still falls back to the file store
   // when the Secret Service does not answer.
-  if (env.HQ_KEYCHAIN === 'libsecret') return 'libsecret';
-  if (process.platform === 'darwin' && (env.HQ_KEYCHAIN_MACOS_FILE || hasTool('security'))) {
+  if (keychainEnv(env) === 'libsecret') return 'libsecret';
+  if (
+    process.platform === 'darwin' &&
+    (keychainEnv(env, 'KEYCHAIN_MACOS_FILE') || hasTool('security'))
+  ) {
     return 'macos';
   }
   if (process.platform === 'linux' && hasTool('secret-tool')) return 'libsecret';
   return 'file';
 }
 
+/**
+ * train 98 e2e: the file the login is REALLY written to, as the notice names it. The short
+ * `~/.hq/credentials.json` only when it is the default place; with `HQ_HOME` set, the real path
+ * (the notice used to say `~/.hq` while the file went under `HQ_HOME`).
+ */
+function credentialsShown(env: NodeJS.ProcessEnv): string {
+  return devBrandEnv(ACTIVE_DEV_BRAND, env, 'HOME')
+    ? hqPaths(env).credentials
+    : copy`~/.hq/credentials.json`;
+}
+
 let warned = false;
-function warnFile(reason: 'no-tool' | 'no-service' = 'no-tool'): void {
+function warnFile(env: NodeJS.ProcessEnv, reason: 'no-tool' | 'no-service' = 'no-tool'): void {
   if (warned) return;
   warned = true;
+  const where = credentialsShown(env);
   process.stderr.write(
     reason === 'no-service'
-      ? 'hq: the system keychain is not answering (no Secret Service running), so your login is stored in ~/.hq/credentials.json (readable only by you).\n'
-      : 'hq: no system keychain tool found, so your login is stored in ~/.hq/credentials.json (readable only by you).\n',
+      ? copy`hq: the system keychain is not answering (no Secret Service running), so your login is stored in ${where} (readable only by you).\n`
+      : copy`hq: no system keychain tool found, so your login is stored in ${where} (readable only by you).\n`,
   );
 }
 
@@ -124,7 +145,7 @@ function securityArg(value: string): string {
 
 /** `HQ_KEYCHAIN_MACOS_FILE`: a specific keychain file instead of the login keychain (tests). */
 function macosKeychainArgs(env: NodeJS.ProcessEnv): string[] {
-  const file = env.HQ_KEYCHAIN_MACOS_FILE;
+  const file = keychainEnv(env, 'KEYCHAIN_MACOS_FILE');
   return typeof file === 'string' && file.length > 0 ? [file] : [];
 }
 
@@ -152,7 +173,7 @@ export function saveTokens(
     try {
       execFileSync(
         'secret-tool',
-        ['store', '--label=hq login', 'service', SERVICE, 'account', host],
+        ['store', copy`--label=hq login`, 'service', SERVICE, 'account', host],
         {
           input: secret,
           stdio: ['pipe', 'ignore', 'ignore'],
@@ -163,10 +184,10 @@ export function saveTokens(
       // Review 2026-09-27: `secret-tool` installed but no Secret Service / D-Bus session (a common
       // headless box). Failing here threw AFTER the device grant was consumed and wasted the
       // approval; the 0600 file store is the documented fallback instead.
-      warnFile('no-service');
+      warnFile(env, 'no-service');
     }
   } else {
-    warnFile();
+    warnFile(env);
   }
   const data = readFileStore(env);
   data[host] = tokens;

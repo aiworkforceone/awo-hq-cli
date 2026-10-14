@@ -3,6 +3,7 @@ import { HqApiError, NotLoggedInError } from '../api.js';
 import { clientFor, type Ctx } from '../context.js';
 import { deleteTokens, loadTokens } from '../keychain.js';
 import { readState, writeState } from '../state.js';
+import { copy } from '@kpa/shared/active-dev-brand';
 
 export async function logout(ctx: Ctx): Promise<number> {
   const state = readState(ctx.env);
@@ -24,13 +25,13 @@ export async function logout(ctx: Ctx): Promise<number> {
       if (!(await client.confirmRevoked())) {
         revoked = false;
         ctx.err(
-          'hq: HQ did not confirm that this computer’s access ended. Remove it in HQ, under Account, Devices.',
+          copy`hq: HQ did not confirm that this computer’s access ended. Remove it in HQ, under Account, Devices.`,
         );
       }
     } else {
       revoked = false;
       ctx.err(
-        `hq: could not reach HQ to revoke this device (${(err as Error).message}). Signed out locally.`,
+        copy`hq: could not reach HQ to revoke this device (${(err as Error).message}). Signed out locally.`,
       );
     }
   }

@@ -9,6 +9,7 @@ import {
   WAKE_POLL_MS,
   WAKE_TIMEOUT_MS,
   wakeTimeoutMessage,
+  wakingTeamLine,
 } from '../connect.js';
 import { clientFor, type Ctx } from '../context.js';
 import { readState, writeState } from '../state.js';
@@ -42,7 +43,7 @@ async function wake(ctx: Ctx, team: Team, client: ReturnType<typeof clientFor>):
     throw new ConnectRefusedError(refusalMessage(team, err));
   }
   if (answer.body.state === 'running') return;
-  ctx.err(`hq: waking team "${team.workspace.name}" (about 15 s)...`);
+  ctx.err(wakingTeamLine(team));
   const deadline = ctx.now() + WAKE_TIMEOUT_MS;
   while (ctx.now() < deadline) {
     await ctx.sleep(WAKE_POLL_MS);

@@ -1,3 +1,4 @@
+/* @dev-brand-copy-file: every string here is our copy (scripts/dev-brand-build.mjs). */
 /**
  * The `hq` command manifest (feature hq-docs, Decision 6): the ONE place a command, a flag, an
  * example or an exit code is described. Two things render from it and nothing else describes them:
@@ -11,6 +12,9 @@
  * team machine that idles is "sleeping", never the other word.
  */
 import { SSH_REMOVED_MESSAGE } from '@kpa/shared/remote.types';
+import { ACTIVE_DEV_BRAND, brandText } from '@kpa/shared/active-dev-brand';
+import type { DevBrand } from '@kpa/shared/dev-brand-core';
+import { rebrandCopy } from '@kpa/shared/dev-brand-copy';
 
 export interface CliFlag {
   /** Without the leading `--`. */
@@ -47,6 +51,9 @@ export interface CliCommand {
   removed?: boolean;
 }
 
+/** The SSH config file an older release of this brand's CLI wrote, if it ever had SSH. */
+const LEGACY_SSH_CONFIG = ACTIVE_DEV_BRAND.cli.legacySshConfig;
+
 export const CLI_TAGLINE = 'connect this computer to your AI Team Cloud Computers';
 
 const HELP_FOOTNOTE =
@@ -56,6 +63,26 @@ const ORG_FLAG: CliFlag = {
   name: 'org',
   valueHint: '<slug>',
   description: 'Only look in this organization, when you belong to more than one.',
+};
+
+/** cli-session-lifecycle: the flags `hq sessions`, `start`, `stop` and `restart` share. */
+const JSON_FLAG: CliFlag = {
+  name: 'json',
+  description:
+    'Print the result as one JSON document on stdout. Refusals are still plain text on stderr, with exit code 1.',
+};
+
+const YES_FLAG: CliFlag = {
+  name: 'yes',
+  description:
+    'Do not ask before interrupting a session that is answering. Without it, and without a terminal to ask at, `hq` refuses.',
+};
+
+const SESSION_TEAM_FLAG: CliFlag = {
+  name: 'team',
+  valueHint: '<t>',
+  description:
+    'Only look for the session in this team (its `hq-…` name or its name). Use it when the same session name exists in two teams.',
 };
 
 /** Flags every command accepts (read before the command runs). */
@@ -119,8 +146,9 @@ export const CLI_COMMANDS: CliCommand[] = [
       {
         name: 'host',
         valueHint: '<url>',
-        description:
+        description: brandText(
           'The HQ address to sign in to. Defaults to `https://hq.aiworkforceone.com`, or to `HQ_HOST` when set. Only localhost may use plain `http`.',
+        ),
       },
       {
         name: 'no-browser',
@@ -131,7 +159,7 @@ export const CLI_COMMANDS: CliCommand[] = [
     examples: [
       { cmd: 'hq login', description: 'Sign in to HQ. Your browser opens the approval page.' },
       {
-        cmd: 'hq login --host https://hq.aiworkforceone.com',
+        cmd: brandText('hq login --host https://hq.aiworkforceone.com'),
         description: 'Sign in to a specific HQ address.',
       },
       {
@@ -166,7 +194,7 @@ export const CLI_COMMANDS: CliCommand[] = [
     name: 'up',
     usage: ['hq up <team> [--org <slug>]'],
     summary:
-      'Wake a sleeping AI Team Cloud Computer and wait until it is ready (about 15 seconds, up to 3 minutes).',
+      'Wake a sleeping AI Team Cloud Computer and wait until it is ready (usually 15-30 seconds, 30-45 seconds on Boost Max, up to 3 minutes).',
     help: [{ text: 'hq up <team>', summary: 'wake an AI Team Cloud Computer' }],
     flags: [ORG_FLAG],
     examples: [{ cmd: 'hq up hq-3f9a1c2e', description: 'Wake the team with this `hq-…` name.' }],
@@ -228,6 +256,117 @@ export const CLI_COMMANDS: CliCommand[] = [
           'No session matched (or more than one did), HQ could not be reached, or your access ended.',
       },
       { code: 2, meaning: 'No session named, or `--local-echo` was not auto, always or off.' },
+    ],
+  },
+  {
+    name: 'sessions',
+    usage: ['hq sessions [--team <t>] [--json] [--org <slug>]'],
+    summary:
+      'List the sessions in your teams: the first characters of each id, its name, its team, whether it is running, who owns it, and whether you may start, stop and restart it. View-only sessions are listed too.',
+    help: [
+      {
+        text: 'hq sessions [--team <t>] [--json]',
+        summary: 'list your sessions and who may operate them',
+      },
+    ],
+    flags: [
+      {
+        name: 'team',
+        valueHint: '<t>',
+        description: 'Only list the sessions of this team (its `hq-…` name or its name).',
+      },
+      JSON_FLAG,
+      ORG_FLAG,
+    ],
+    examples: [
+      { cmd: 'hq sessions', description: 'List the sessions in all your teams.' },
+      {
+        cmd: 'hq sessions --team hq-3f9a1c2e --json',
+        description: 'List one team as JSON, for a script.',
+      },
+    ],
+    exitCodes: [
+      { code: 0, meaning: 'Printed (a team whose list could not be read is named on stderr).' },
+      { code: 1, meaning: 'Not signed in, or HQ could not be reached.' },
+    ],
+  },
+  {
+    name: 'start',
+    usage: ['hq start <session> [--team <t>] [--json] [--org <slug>]'],
+    summary:
+      'Start a stopped session, by the first characters of its id or its name. A sleeping AI Team Cloud Computer wakes for it, as when you press Start in HQ. Only the session owner or a team owner can start it.',
+    help: [{ text: 'hq start <session>', summary: 'start a session (its team wakes for it)' }],
+    flags: [SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [
+      {
+        cmd: 'hq start 7c21e0b4',
+        description: 'Start a session by the first characters of its id.',
+      },
+      {
+        cmd: 'hq start "fix login bug" --team hq-3f9a1c2e',
+        description: 'Start a session by name in one team.',
+      },
+    ],
+    exitCodes: [
+      { code: 0, meaning: 'HQ is starting the session, or it was already starting or running.' },
+      {
+        code: 1,
+        meaning:
+          'No session matched (or more than one did), you may not operate it, the team has no free session slot, or HQ refused or could not be reached.',
+      },
+      { code: 2, meaning: 'No session named.' },
+    ],
+  },
+  {
+    name: 'stop',
+    usage: ['hq stop <session> [--yes] [--team <t>] [--json] [--org <slug>]'],
+    summary:
+      'Stop a running session. If Claude or Codex is answering in it right now, `hq` asks first; in a script, pass `--yes`. Only the session owner or a team owner can stop it.',
+    help: [
+      {
+        text: 'hq stop <session> [--yes]',
+        summary: 'stop a session (asks first if it is answering)',
+      },
+    ],
+    flags: [YES_FLAG, SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [
+      { cmd: 'hq stop 7c21e0b4', description: 'Stop a session.' },
+      {
+        cmd: 'hq stop "fix login bug" --yes',
+        description: 'Stop it without asking, even while it is answering.',
+      },
+    ],
+    exitCodes: [
+      { code: 0, meaning: 'Stopped, or it was already stopped.' },
+      {
+        code: 1,
+        meaning:
+          'No session matched (or more than one did), you may not operate it, you answered no, it is answering and there is no terminal to ask (pass `--yes`), or HQ refused or could not be reached.',
+      },
+      { code: 2, meaning: 'No session named.' },
+    ],
+  },
+  {
+    name: 'restart',
+    usage: ['hq restart <session> [--yes] [--team <t>] [--json] [--org <slug>]'],
+    summary:
+      'Stop a session and start it again, resuming its conversation. Like `hq stop`, it asks first while the session is answering. Only the session owner or a team owner can restart it.',
+    help: [
+      {
+        text: 'hq restart <session> [--yes]',
+        summary: 'restart a session, resuming its conversation',
+      },
+    ],
+    flags: [YES_FLAG, SESSION_TEAM_FLAG, JSON_FLAG, ORG_FLAG],
+    examples: [{ cmd: 'hq restart 7c21e0b4', description: 'Restart a session.' }],
+    exitCodes: [
+      { code: 0, meaning: 'HQ is restarting the session.' },
+      {
+        code: 1,
+        meaning:
+          'No session matched (or more than one did), you may not operate it, you answered no, it is answering and there is no terminal to ask (pass `--yes`), or HQ refused or could not be reached.',
+      },
+      { code: 2, meaning: 'No session named.' },
     ],
   },
   {
@@ -305,7 +444,9 @@ export const CLI_COMMANDS: CliCommand[] = [
     name: 'ssh-proxy',
     removed: true,
     usage: ['hq ssh-proxy'],
-    summary: `${SSH_REMOVED_MESSAGE} An old \`Host hq-…\` entry in \`~/.ssh/hq_config\` still runs this; delete that file and its \`Include\` line in \`~/.ssh/config\`.`,
+    summary: LEGACY_SSH_CONFIG
+      ? `${SSH_REMOVED_MESSAGE} An old \`Host hq-…\` entry in \`${LEGACY_SSH_CONFIG}\` still runs this; delete that file and its \`Include\` line in \`~/.ssh/config\`.`
+      : SSH_REMOVED_MESSAGE,
     help: [],
     flags: [],
     examples: [
@@ -341,14 +482,26 @@ function helpLine(line: HelpLine): string {
     : `${lead} ${line.summary}`;
 }
 
-/** `hq --help`. */
-export function renderUsage(version: string): string {
+/**
+ * `hq --help`, in the build's brand. The manifest is OUR copy only (no server
+ * data), written in AWO words, so each line is rebranded before the columns are padded; the AWO
+ * build prints exactly what it always did (`command-manifest.test.ts` pins it).
+ */
+export function renderUsage(version: string, brand: DevBrand = ACTIVE_DEV_BRAND): string {
+  const b = (text: string): string => rebrandCopy(brand, text);
   return [
-    `hq ${version}: ${CLI_TAGLINE}`,
+    `${brand.cli.command} ${version}: ${b(CLI_TAGLINE)}`,
     '',
     'Usage:',
-    ...CLI_COMMANDS.flatMap((c) => c.help.map(helpLine)),
+    ...CLI_COMMANDS.flatMap((c) =>
+      c.help.map((l) =>
+        helpLine({
+          text: b(l.text),
+          ...(l.summary !== undefined ? { summary: b(l.summary) } : {}),
+        }),
+      ),
+    ),
     '',
-    HELP_FOOTNOTE,
+    b(HELP_FOOTNOTE),
   ].join('\n');
 }

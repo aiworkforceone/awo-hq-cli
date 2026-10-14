@@ -12,7 +12,7 @@
  *     (`@kpa/shared/terminal-queries`, shared with the in-container shim), so the laptop never answers one into the agent as keystrokes;
  *   - a `presence` frame every 60 s while attached, so a view-only watcher keeps the machine awake;
  *   - the wake codes are progress (print the server's sentence, re-attach with intent `reconnect`),
- *     with "Still on it..." past 20 s and a bounded wait (`WAKE_TIMEOUT_MS`, the other doors' budget);
+ *     with "Taking longer than usual, still working." past 30 s and a bounded wait (`WAKE_TIMEOUT_MS`, the other doors' budget);
  *   - a `history_unavailable` notice is not printed during a wake (DEF-140: a FROZEN screen was not
  *     lost), nor right after a repaint or a reset (a sibling attach's read, not a lost screen);
  *   - after "Press any key to continue." (`workspace_asleep`, DEF-110) the next key re-attaches with
@@ -64,6 +64,8 @@ import { readState, writeState } from '../state.js';
 import { withTeamAliases, type Team } from '../teams.js';
 import { LocalEchoSession } from '../local-echo/engine-adapter.js';
 import { upgradeRefusalMessage, type WsFactory } from '../tunnel-client.js';
+import { cleanSessionSummary } from '../safe-text.js';
+import { copy } from '@kpa/shared/active-dev-brand';
 
 export {
   MAX_RECONNECTS,
@@ -79,11 +81,14 @@ export {
 
 export const DETACH_BYTE = 0x1d; // Ctrl-]
 /** Printed once when local echo was asked for but the org or the environment does not allow it. */
-export const LOCAL_ECHO_UNAVAILABLE = 'hq: local echo is not available on this HQ yet.';
+export const LOCAL_ECHO_UNAVAILABLE = copy`hq: local echo is not available on this HQ yet.`;
 
 export interface Found {
   team: Team;
+  /** The session with its strings cleaned (`cleanSessionSummary`): what every print path uses. */
   session: RemoteSessionSummary;
+  /** train 96 e2e: the server's EXACT name, for `--json` `rawName` only; never printed as text. */
+  rawName: string;
 }
 
 /** Find a session by id prefix or exact name across every team the device may attach to. */
@@ -116,9 +121,18 @@ export async function findSession(
     } catch {
       continue; // a team whose machine cannot answer is skipped, not fatal
     }
-    for (const s of sessions) {
-      if (s.id.toLowerCase().startsWith(needle) || s.name.toLowerCase() === needle)
-        hits.push({ team, session: s });
+    // Security L1: names are cleaned as they arrive, so every line printed about a hit is clean.
+    // train 96 e2e: a name is matched as cleaned OR as HQ sent it, so a script that read `rawName`
+    // from `--json` can hand it back. The raw value is only compared, never printed.
+    for (const raw of sessions) {
+      const s = cleanSessionSummary(raw);
+      const rawName = String(raw.name ?? '');
+      if (
+        s.id.toLowerCase().startsWith(needle) ||
+        s.name.toLowerCase() === needle ||
+        rawName.toLowerCase() === needle
+      )
+        hits.push({ team, session: s, rawName });
     }
   }
   return hits;
@@ -157,12 +171,12 @@ export async function attach(
   const hits = await findSession(client, orgs, opts.session, opts.org, opts.team);
   if (hits.length === 0) {
     ctx.err(
-      `hq: no session "${opts.session}" you can open. Sessions are listed in HQ on the team page.`,
+      copy`hq: no session "${opts.session}" you can open. Sessions are listed in HQ on the team page.`,
     );
     return 1;
   }
   if (hits.length > 1) {
-    ctx.err(`hq: "${opts.session}" matches ${hits.length} sessions. Use more of the id:`);
+    ctx.err(copy`hq: "${opts.session}" matches ${hits.length} sessions. Use more of the id:`);
     for (const h of hits)
       ctx.err(`  ${h.session.id.slice(0, 8)}  ${h.team.workspace.name} / ${h.session.name}`);
     return 1;
@@ -234,11 +248,11 @@ export async function attach(
   try {
     const end = await attachSession.run();
     if (end.kind === 'refused') {
-      ctx.err(end.status === 0 ? 'hq: could not reach HQ.' : upgradeRefusalMessage(end.status));
+      ctx.err(end.status === 0 ? copy`hq: could not reach HQ.` : upgradeRefusalMessage(end.status));
       return 1;
     }
     if (end.kind === 'lost') {
-      ctx.err('\r\nhq: the connection to HQ was lost.');
+      ctx.err(copy`\r\nhq: the connection to HQ was lost.`);
       return 1;
     }
     if (end.message) ctx.err(end.message);
