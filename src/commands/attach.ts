@@ -157,7 +157,12 @@ export interface AttachIo {
   reconnectBaseMs?: number;
   /** Test seam: how long an admitted attach must stay up to reset the reconnect budget. */
   admitStableMs?: number;
+  /** Test seam: the view-only line's repeat interval (`VIEW_ONLY_NOTICE_MS`). */
+  viewOnlyNoticeMs?: number;
 }
+
+/** While view-only, the "View only" line is said again at most this often as the person types. */
+export const VIEW_ONLY_NOTICE_MS = 5_000;
 
 export async function attach(
   ctx: Ctx,
@@ -226,6 +231,11 @@ export async function attach(
     {
       echo,
       detachByte: DETACH_BYTE,
+      // train 104 e2e: a role that takes typing away must not END the attach on the next key. The
+      // server drops that key (FORBIDDEN); the CLI keeps streaming, drops what is typed after it,
+      // and says the view-only line at most every few seconds. NOT_FOUND still ends it, exit 1.
+      onForbidden: 'view-only',
+      viewOnlyNoticeMs: io.viewOnlyNoticeMs ?? VIEW_ONLY_NOTICE_MS,
       onFirstOpen: () => {
         ctx.err(
           `Attached to "${session.name}" (${session.ownerName}) · ${session.canType ? 'you can type' : 'view only'} · Ctrl-] to detach`,

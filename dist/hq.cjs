@@ -9762,7 +9762,7 @@ function deleteTokens(host, env = process.env) {
 }
 
 // cli/src/version.ts
-var HQ_VERSION = "0.3.0".length > 0 ? "0.3.0" : "0.0.0-dev";
+var HQ_VERSION = "0.3.1".length > 0 ? "0.3.1" : "0.0.0-dev";
 
 // cli/src/api.ts
 var CLI_CLIENT_HEADERS = {
@@ -10134,7 +10134,7 @@ var CLI_ATTACH_COPY = {
   reconnecting: copy`hq: connection lost, reconnecting...`,
   accessEnded: copy`hq: your access to this session ended.`,
   detached: copy`hq: detached.`,
-  nowViewOnly: copy`hq: you can watch this session but not type in it.`,
+  nowViewOnly: copy`hq: View only: your role doesn't let you type here.`,
   sessionStopped: copy`hq: the session stopped.`,
   sessionError: copy`hq: the session exited with an error.`
 };
@@ -10175,6 +10175,8 @@ function createAttachSession(client, target, sink, opts = {}) {
     asleep: false
   };
   let canType = session.canType;
+  let viewOnlySaidAt = null;
+  let everAdmitted = false;
   let current = null;
   let detachRequested = false;
   const detachHooks = /* @__PURE__ */ new Set();
@@ -10258,6 +10260,7 @@ ${attachCopy.detached}` };
           ws,
           () => {
             admittedAt = Date.now();
+            everAdmitted = true;
             cancelLostNotice();
           },
           intent,
@@ -10317,6 +10320,16 @@ ${attachCopy.reconnecting}`);
     const say = (line) => {
       echo?.undrawNow();
       sink.say(line);
+    };
+    const sayViewOnly = () => {
+      const now = Date.now();
+      if (viewOnlySaidAt !== null) {
+        if (opts.viewOnlyNoticeMs === void 0) return;
+        if (now - viewOnlySaidAt < opts.viewOnlyNoticeMs) return;
+      }
+      viewOnlySaidAt = now;
+      say(`\r
+${attachCopy.nowViewOnly}`);
     };
     let lastToken = (headers.Authorization ?? "").slice("Bearer ".length);
     const send = (frame) => {
@@ -10583,6 +10596,9 @@ ${attachCopy.wakeTimeout(team)}`);
           wake2.asleep = false;
           attachFrame("open");
         }
+        if (!canType && before.length > 0 && opts.viewOnlyNoticeMs !== void 0 && !isPassiveTerminalInput(before.toString("utf8"))) {
+          sayViewOnly();
+        }
         if (canType && before.length > 0) {
           const data = before.toString("utf8");
           if (!isPassiveTerminalInput(data)) claimNow?.();
@@ -10658,6 +10674,10 @@ ${attachCopy.sessionError}`);
           follow();
         } else if (frame.type === "ownership-changed") {
           opts.onOwnershipChanged?.();
+          if ("reattach" in frame && frame.reattach === true) {
+            if (attachOutstanding) reattachPending = true;
+            else attachFrame("reconnect");
+          }
         } else if (frame.type === "attached") {
           attachOutstanding = false;
           onAdmitted();
@@ -10722,9 +10742,9 @@ ${opts.wakeText ? opts.wakeText(code, frame.message, wake2.estimate) : `${attach
           if (code === "FORBIDDEN" && opts.onForbidden === "view-only") {
             if (canType) {
               setCanType(false);
-              say(`\r
-${attachCopy.nowViewOnly}`);
+              viewOnlySaidAt = null;
             }
+            sayViewOnly();
             return;
           }
           if (!TERMINAL_ERROR_CODES.has(code)) {
@@ -10738,7 +10758,8 @@ ${attachCopy.prefix}${frame.message}`);
             scheduleErrorRetry();
             return;
           }
-          errorMessage = `\r
+          errorMessage = code === "NOT_FOUND" && everAdmitted ? `\r
+${attachCopy.accessEnded}` : `\r
 ${attachCopy.prefix}${frame.message}`;
           exitCode = 1;
           ws.close(1e3);
@@ -11991,6 +12012,7 @@ async function findSession(client, orgs, ref, org, teamRef) {
   }
   return hits;
 }
+var VIEW_ONLY_NOTICE_MS = 5e3;
 async function attach(ctx, opts, io) {
   const state = readState(ctx.env);
   const client = clientFor(ctx, state);
@@ -12051,6 +12073,11 @@ async function attach(ctx, opts, io) {
     {
       echo,
       detachByte: DETACH_BYTE,
+      // train 104 e2e: a role that takes typing away must not END the attach on the next key. The
+      // server drops that key (FORBIDDEN); the CLI keeps streaming, drops what is typed after it,
+      // and says the view-only line at most every few seconds. NOT_FOUND still ends it, exit 1.
+      onForbidden: "view-only",
+      viewOnlyNoticeMs: io.viewOnlyNoticeMs ?? VIEW_ONLY_NOTICE_MS,
       onFirstOpen: () => {
         ctx.err(
           `Attached to "${session.name}" (${session.ownerName}) \xB7 ${session.canType ? "you can type" : "view only"} \xB7 Ctrl-] to detach`
